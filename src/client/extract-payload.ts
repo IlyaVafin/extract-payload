@@ -1,3 +1,4 @@
+import fs from 'fs';
 export interface LinkedinProfile {
   name: string | null;
 
@@ -159,3 +160,246 @@ function extractPublicIdentifier(url: string): string | null {
 
   return m ? decodeURIComponent(m[1]) : null;
 }
+
+interface WorkExperience {
+  position: string;
+  companyName: string;
+  companyLogoUrl: string;
+  period: string;
+  duration: string;
+  location: string;
+}
+
+export function extractWorkExperience(jsonContent: string): WorkExperience[] {
+  try {
+    const components: Record<string, any> = {};
+
+    // Парсим блоки вида "abc:I[...]"
+    const blocks = jsonContent.split(/^(?=[a-f0-9]+:)/m);
+
+    for (const block of blocks) {
+      if (!block.trim()) continue;
+
+      const lines = block.split('\n');
+      const firstLine = lines[0];
+
+      const match = firstLine.match(/^([a-f0-9]+):I?(.*)/);
+
+      if (!match) continue;
+
+      const key = match[1];
+
+      const jsonStr =
+        firstLine.substring(firstLine.indexOf(match[2])) +
+        '\n' +
+        lines.slice(1).join('\n');
+
+      try {
+        components[key] = JSON.parse(jsonStr.trim());
+      } catch {
+        // skip
+      }
+    }
+
+    const root = components['3']; // ExperienceTopLevelSection
+
+    if (!root) {
+      return [];
+    }
+
+    const experiences: WorkExperience[] = [];
+
+    function collectStrings(node: any, result: string[] = []): string[] {
+      if (typeof node === 'string') {
+        result.push(node);
+        return result;
+      }
+
+      if (Array.isArray(node)) {
+        for (const item of node) {
+          collectStrings(item, result);
+        }
+      } else if (node && typeof node === 'object') {
+        for (const value of Object.values(node)) {
+          collectStrings(value, result);
+        }
+      }
+
+      return result;
+    }
+
+    function extractUsefulStrings(card: any): string[] {
+      const all = collectStrings(card);
+
+      return all.filter((text) => {
+        if (!text) return false;
+
+        if (
+          text === '$' ||
+          text.startsWith('$L') ||
+          text.startsWith('proto.') ||
+          text.startsWith('var(--') ||
+          text === '$undefined'
+        ) {
+          return false;
+        }
+
+        if (
+          [
+            'open',
+            'start',
+            'end',
+            'center',
+            'horizontal',
+            'vertical',
+            'normal',
+            'small',
+            'medium',
+            'large',
+            'sans',
+            'none',
+            'click',
+            'url',
+            'screen',
+          ].includes(text)
+        ) {
+          return false;
+        }
+
+        if (text.startsWith('_') || text.includes('entity-collection-item')) {
+          return false;
+        }
+
+        return true;
+      });
+    }
+
+    function findExperienceCards(node: any, result: any[] = []): any[] {
+      if (!node) return result;
+
+      if (
+        node &&
+        typeof node === 'object' &&
+        typeof node.componentKey === 'string' &&
+        node.componentKey.startsWith('entity-collection-item-')
+      ) {
+        result.push(node);
+      }
+
+      if (Array.isArray(node)) {
+        for (const item of node) {
+          findExperienceCards(item, result);
+        }
+      } else if (typeof node === 'object') {
+        for (const value of Object.values(node)) {
+          findExperienceCards(value, result);
+        }
+      }
+
+      return result;
+    }
+
+    function extractCardData(card: any): WorkExperience | null {
+      const texts: string[] = [];
+
+      function walk(node: any) {
+        if (!node) return;
+
+        if (typeof node === 'string') {
+          texts.push(node);
+          return;
+        }
+
+        if (Array.isArray(node)) {
+          node.forEach(walk);
+          return;
+        }
+
+        if (typeof node === 'object') {
+          if (node.children) walk(node.children);
+          else Object.values(node).forEach(walk);
+        }
+      }
+
+      walk(card);
+
+      const clean = texts.filter(
+        (t) =>
+          t &&
+          !t.startsWith('$') &&
+          !/^[a-z0-9_]{10,}/i.test(t) &&
+          !t.includes('entity-collection-item'),
+      );
+
+      const position =
+        clean.find(
+          (t) => !t.includes('·') && !t.includes('мес') && t.length < 80,
+        ) || '';
+
+      const companyLine = clean.find((t) => t.includes('·')) || '';
+      const period =
+        clean.find((t) => /(\d{4}|настоящее).*(мес|лет|г\.)/i.test(t)) || '';
+
+      const location =
+        clean.find((t) => /[А-ЯA-Za-z].*,\s?[А-ЯA-Za-z]/.test(t)) || '';
+
+      const companyName = companyLine.split('·')[0].trim();
+
+      const duration = period.includes('·') ? period.split('·')[1].trim() : '';
+
+      return {
+        position: position.trim(),
+        companyName,
+        companyLogoUrl: '',
+        period,
+        duration,
+        location,
+      };
+    }
+
+    const cards = findExperienceCards(root);
+
+    for (const card of cards) {
+      const exp = extractCardData(card);
+      if (exp?.position && exp?.companyName) {
+        experiences.push(exp);
+      }
+    }
+
+    return experiences;
+  } catch (error) {
+    console.error('Error parsing work experience:', error);
+    return [];
+  }
+}
+
+function findLogoNode(node: any): any {
+  if (!node) return null;
+
+  if (node?.renderPayload?.imageRenditions?.length) {
+    return node;
+  }
+
+  if (Array.isArray(node)) {
+    for (const item of node) {
+      const found = findLogoNode(item);
+
+      if (found) {
+        return found;
+      }
+    }
+  } else if (typeof node === 'object') {
+    for (const value of Object.values(node)) {
+      const found = findLogoNode(value);
+
+      if (found) {
+        return found;
+      }
+    }
+  }
+
+  return null;
+}
+const content = fs.readFileSync('./expirience-payload2.json', 'utf-8');
+const result = extractWorkExperience(content);
+console.log(result);
