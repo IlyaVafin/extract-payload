@@ -12,9 +12,6 @@ const fetch = fetchCookie<string, RequestInit, Response>(
 
 const BROWSEMAP_NAVIGATION_PATH = '/flagship-web/rsc-action/actions/navigation';
 
-const BROWSEMAP_SCREEN_ID =
-  'com.linkedin.sdui.flagshipnav.profile.ProfileOverlayBrowsemap';
-
 const PROFILE_OVERLAY_PYMK_LIST_SCREEN_ID =
   'com.linkedin.sdui.flagshipnav.profile.ProfileOverlayPymkList';
 
@@ -67,72 +64,6 @@ export class LinkedInProfilesYouMayKnowClient {
     await fetch(`${this.baseURL}/feed`, {
       headers: { Cookie: cookie },
     });
-  }
-
-  async getProfilesYouMayKnow(params: {
-    cookie: string;
-    anchorVanity: string;
-    signal?: AbortSignal;
-  }) {
-    const { cookie, anchorVanity, signal } = params;
-
-    const vanity = this.normalizeVanity(anchorVanity);
-
-    // 🔥 IMPORTANT: прогрев сессии
-    await this.warmSession(cookie);
-
-    // 🔥 CSRF НЕ доверяем ручному — пересчитываем
-    const csrf = this.extractCsrfFromCookie(cookie);
-
-    const body = {
-      isModal: true,
-      clientArguments: {
-        $type: 'proto.sdui.actions.requests.RequestedArguments',
-        requestedStateKeys: [],
-        requestMetadata: {
-          $type: 'proto.sdui.common.RequestMetadata',
-        },
-        states: [],
-        screenId: BROWSEMAP_SCREEN_ID,
-        payload: {
-          vanityName: vanity,
-          isVanityNameResolved: true,
-        },
-      },
-    };
-
-    const response = await fetch(
-      this.navigationRequestURL(BROWSEMAP_SCREEN_ID),
-      {
-        method: 'POST',
-        signal,
-        headers: {
-          'csrf-token': csrf,
-          Cookie: cookie,
-          'content-type': 'application/json',
-          accept: '*/*',
-          origin: this.baseURL,
-          referer: `${this.baseURL}/in/${vanity}/`,
-        },
-        body: JSON.stringify(body),
-      },
-    );
-
-    const raw = await response.text();
-
-    if (!response.ok) {
-      const snippet = raw.length > 512 ? raw.slice(0, 512) + '…' : raw;
-
-      if (response.status === 999) {
-        throw new LinkedInAccountBannedError();
-      }
-
-      throw new Error(`linkedin: status ${response.status}: ${snippet}`);
-    }
-
-    return {
-      raw,
-    };
   }
 
   async getProfileOverlayPymkList(params: {
