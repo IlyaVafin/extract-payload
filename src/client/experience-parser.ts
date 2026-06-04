@@ -46,6 +46,7 @@ function parseLinkedInExperience(filePath: string): WorkExperience[] {
       !text.startsWith('$3:') &&
       !text.startsWith('$11:') &&
       !text.startsWith('$12:') &&
+      !text.startsWith('$15:') &&
       !/^[0-9a-f-]{36}$/.test(text) &&
       !text.startsWith('com.linkedin') &&
       !text.startsWith('urn:li:') &&
@@ -68,7 +69,11 @@ function parseLinkedInExperience(filePath: string): WorkExperience[] {
     const { text } = allTexts[i];
 
     // Пропускаем заголовки и кнопки
-    if (text === 'Опыт работы' || text === 'Показать все') {
+    if (
+      text === 'Опыт работы' ||
+      text === 'Показать все' ||
+      text === 'Образование'
+    ) {
       i++;
       continue;
     }
@@ -93,7 +98,7 @@ function parseLinkedInExperience(filePath: string): WorkExperience[] {
         let companyLocation = 'Не указана';
         let positionsStartIndex = i + 1;
 
-        if (nextText && !nextText.includes('г.') && nextText.length < 50) {
+        if (nextText && !nextText.includes('г.') && nextText.length < 100) {
           companyLocation = nextText;
           positionsStartIndex = i + 2;
         }
@@ -111,7 +116,11 @@ function parseLinkedInExperience(filePath: string): WorkExperience[] {
           }
 
           // Если это заголовок или кнопка — выходим
-          if (posText === 'Опыт работы' || posText === 'Показать все') {
+          if (
+            posText === 'Опыт работы' ||
+            posText === 'Показать все' ||
+            posText === 'Образование'
+          ) {
             break;
           }
 
@@ -129,11 +138,13 @@ function parseLinkedInExperience(filePath: string): WorkExperience[] {
             if (j + 1 < allTexts.length) {
               const locText = allTexts[j + 1].text;
               if (
-                !locText.includes('·') &&
                 !locText.includes('г.') &&
-                locText.length < 50 &&
+                locText.length < 100 &&
                 locText !== 'Опыт работы' &&
-                locText !== 'Показать все'
+                locText !== 'Показать все' &&
+                locText !== 'Образование' &&
+                !locText.includes('навык') &&
+                !locText.includes('«')
               ) {
                 location = locText;
                 j++;
@@ -179,11 +190,13 @@ function parseLinkedInExperience(filePath: string): WorkExperience[] {
         if (i + 2 < allTexts.length) {
           const locText = allTexts[i + 2].text;
           if (
-            !locText.includes('·') &&
             !locText.includes('г.') &&
-            locText.length < 50 &&
+            locText.length < 100 &&
             locText !== 'Опыт работы' &&
-            locText !== 'Показать все'
+            locText !== 'Показать все' &&
+            locText !== 'Образование' &&
+            !locText.includes('навык') &&
+            !locText.includes('«')
           ) {
             location = locText;
           }
