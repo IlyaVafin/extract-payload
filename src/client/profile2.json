@@ -1,0 +1,362 @@
+1:I[
+  "030d6035cb3a997efb1cff7a008d2f89",
+  [],
+  "default"
+]
+3:I[
+  "e9e5744c902fddb98f0eb62aee5d400a",
+  [],
+  "TracedComponent"
+]
+4:I[
+  "f54a4d9f94904eb227a6c1307124edd6",
+  [],
+  "ClientComponent"
+]
+5:I[
+  "621c913cba38dd3c27c9f4d2692a01a9",
+  [],
+  "ReplaceableComponent"
+]
+6:I[
+  "b55b61101826bcdf8a734370f7480e4e",
+  [],
+  "VisibleItemsProvider"
+]
+7:I[
+  "85b20fca39223dffe536dd03122e5f56",
+  [],
+  "default"
+]
+9:I[
+  "1e9b95c01e7f142c1ba9a289f4714a9c",
+  [],
+  "default"
+]
+0: [
+  "$",
+  "div",
+  null,
+  {
+    "data-sdui-component": "com.linkedin.sdui.generated.profile.dsl.impl.profileCardsAboveActivity",
+    "children": [
+      false,
+      [
+        [
+          "$",
+          "$L1",
+          null,
+          {
+            "modelStates": [
+              {
+                "key": {
+                  "key": {
+                    "value": {
+                      "$case": "id",
+                      "id": "expandable_text_block_auto-component-aa896bc8-775e-43e4-8de4-0f52d740724f"
+                    }
+                  },
+                  "namespace": ""
+                },
+                "value": {
+                  "$case": "stringValue",
+                  "stringValue": "Collapsed"
+                }
+              }
+            ]
+          }
+        ],
+        "$L2",
+        [
+          "$",
+          "div",
+          null,
+          {
+            "className": "_5734e67c _91e727f1 _11355420 _506f0e41 _112ff698 c73bd1e5 d9991871",
+            "children": [
+              [
+                "$",
+                "$L3",
+                null,
+                {
+                  "observabilityIdentifier": "com.linkedin.sdui.impl.profile.components.suggestedForYouTopLevelSection",
+                  "children": [
+                    "$",
+                    "$L4",
+                    null,
+                    {
+                      "componentKey": "com.linkedin.sdui.profile.card.refACoAAArnuusBrkjYanSjztuo7jT-IdY8_Z_dL8USuggestedForYou",
+                      "children": [
+                        "$",
+                        "$L5",
+                        "com.linkedin.sdui.profile.card.refACoAAArnuusBrkjYanSjztuo7jT-IdY8_Z_dL8USuggestedForYou",
+                        {
+                          "componentKey": "com.linkedin.sdui.profile.card.refACoAAArnuusBrkjYanSjztuo7jT-IdY8_Z_dL8USuggestedForYou",
+                          "initialContent": "$undefined",
+                          "componentkey": "com.linkedin.sdui.profile.card.refACoAAArnuusBrkjYanSjztuo7jT-IdY8_Z_dL8USuggestedForYou"
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ],
+              [
+                "$",
+                "$L3",
+                null,
+                {
+                  "observabilityIdentifier": "com.linkedin.sdui.impl.profile.components.aboutSection",
+                  "children": [
+                    "$",
+                    "$L4",
+                    null,
+                    {
+                      "componentKey": "com.linkedin.sdui.profile.card.refACoAAArnuusBrkjYanSjztuo7jT-IdY8_Z_dL8UAbout",
+                      "children": [
+                        "$",
+                        "$L5",
+                        "com.linkedin.sdui.profile.card.refACoAAArnuusBrkjYanSjztuo7jT-IdY8_Z_dL8UAbout",
+                        {
+                          "componentKey": "com.linkedin.sdui.profile.card.refACoAAArnuusBrkjYanSjztuo7jT-IdY8_Z_dL8UAbout",
+                          "initialContent": [
+                            "$",
+                            "$L4",
+                            null,
+                            {
+                              "componentKey": "com.linkedin.sdui.profile.card.refACoAAArnuusBrkjYanSjztuo7jT-IdY8_Z_dL8UAbout",
+                              "viewTrackingSpecs": {
+                                "viewName": "profile-card-about",
+                                "impressionThresholds": [
+                                  {
+                                    "minDurationMs": 300,
+                                    "minVisibilityPercentage": 0.5,
+                                    "triggerOnStart": false
+                                  }
+                                ],
+                                "contentTrackingId": "6gWW3QJaRJWSprU0Xgch6Q==",
+                                "trackingScope": [
+                                  {
+                                    "contentTrackingId": "LlzLsMA/RUWOGS/tbS3wUg==",
+                                    "topicName": "ProfileCardsServedEvent",
+                                    "breadcrumb": "$undefined",
+                                    "transporterKeys": [
+                                      "default"
+                                    ]
+                                  }
+                                ]
+                              },
+                              "children": [
+                                "$",
+                                "section",
+                                null,
+                                {
+                                  "className": "fcd2bdf4 d7ba930f _8aa501d1 e7367531 _589576ec",
+                                  "componentkey": "com.linkedin.sdui.profile.card.refACoAAArnuusBrkjYanSjztuo7jT-IdY8_Z_dL8UAbout",
+                                  "children": [
+                                    "$",
+                                    "div",
+                                    null,
+                                    {
+                                      "className": "_5734e67c _91e727f1 _11355420 _506f0e41 _112ff698 c73bd1e5 _172e2747",
+                                      "children": [
+                                        [
+                                          "$",
+                                          "div",
+                                          null,
+                                          {
+                                            "className": "_5734e67c _91e727f1 _11355420 _506f0e41 _112ff698 c73bd1e5 _172e2747",
+                                            "children": [
+                                              [
+                                                "$",
+                                                "div",
+                                                null,
+                                                {
+                                                  "className": "_2b5f6c15 cb4d85d5 _1ba79e61 b25340b2 _91e727f1 _306a0fc8 _6f427e51 _24c11675 c73bd1e5 _172e2747",
+                                                  "children": [
+                                                    "$",
+                                                    "$L6",
+                                                    null,
+                                                    {
+                                                      "direction": "horizontal",
+                                                      "children": [
+                                                        [
+                                                          "$",
+                                                          "$L7",
+                                                          null,
+                                                          {
+                                                            "maxLineCountExpression": 0,
+                                                            "textColorExpression": 176,
+                                                            "textProps": {
+                                                              "fontFamily": "sans",
+                                                              "fontSize": "xlarge",
+                                                              "fontStyle": "normal",
+                                                              "fontWeight": "bold",
+                                                              "lineHeight": "default",
+                                                              "tagName": "h2",
+                                                              "textAlign": "start",
+                                                              "children": [
+                                                                "Общие сведения"
+                                                              ],
+                                                              "linkColorTokens": "$undefined",
+                                                              "linkHoverDecoration": "underline"
+                                                            }
+                                                          }
+                                                        ]
+                                                      ]
+                                                    }
+                                                  ]
+                                                }
+                                              ],
+                                              [
+                                                "$",
+                                                "div",
+                                                null,
+                                                {
+                                                  "className": "_5734e67c a2fb6c1c _1ba79e61 b25340b2 _91e727f1 _11355420 _506f0e41 _112ff698 c73bd1e5 _172e2747",
+                                                  "children": [
+                                                    "$L8"
+                                                  ]
+                                                }
+                                              ]
+                                            ]
+                                          }
+                                        ]
+                                      ]
+                                    }
+                                  ]
+                                }
+                              ]
+                            }
+                          ],
+                          "componentkey": "com.linkedin.sdui.profile.card.refACoAAArnuusBrkjYanSjztuo7jT-IdY8_Z_dL8UAbout"
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ],
+              [
+                "$",
+                "$L3",
+                null,
+                {
+                  "observabilityIdentifier": "com.linkedin.sdui.impl.profile.components.profileServicesSection",
+                  "children": [
+                    "$",
+                    "$L4",
+                    null,
+                    {
+                      "componentKey": "com.linkedin.sdui.profile.card.refACoAAArnuusBrkjYanSjztuo7jT-IdY8_Z_dL8UServices",
+                      "children": [
+                        "$",
+                        "$L5",
+                        "com.linkedin.sdui.profile.card.refACoAAArnuusBrkjYanSjztuo7jT-IdY8_Z_dL8UServices",
+                        {
+                          "componentKey": "com.linkedin.sdui.profile.card.refACoAAArnuusBrkjYanSjztuo7jT-IdY8_Z_dL8UServices",
+                          "initialContent": "$undefined",
+                          "componentkey": "com.linkedin.sdui.profile.card.refACoAAArnuusBrkjYanSjztuo7jT-IdY8_Z_dL8UServices"
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ],
+              [
+                "$",
+                "$L3",
+                null,
+                {
+                  "observabilityIdentifier": "com.linkedin.sdui.impl.profile.components.featuredSection",
+                  "children": [
+                    "$",
+                    "$L4",
+                    null,
+                    {
+                      "componentKey": "com.linkedin.sdui.profile.card.refACoAAArnuusBrkjYanSjztuo7jT-IdY8_Z_dL8UFeatured",
+                      "children": [
+                        "$",
+                        "$L5",
+                        "com.linkedin.sdui.profile.card.refACoAAArnuusBrkjYanSjztuo7jT-IdY8_Z_dL8UFeatured",
+                        {
+                          "componentKey": "com.linkedin.sdui.profile.card.refACoAAArnuusBrkjYanSjztuo7jT-IdY8_Z_dL8UFeatured",
+                          "initialContent": "$undefined",
+                          "componentkey": "com.linkedin.sdui.profile.card.refACoAAArnuusBrkjYanSjztuo7jT-IdY8_Z_dL8UFeatured"
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            ]
+          }
+        ]
+      ]
+    ]
+  }
+]
+8: [
+  "$",
+  "$L9",
+  null,
+  {
+    "textProps": {
+      "fontFamily": "sans",
+      "fontSize": "small",
+      "fontStyle": "normal",
+      "fontWeight": "normal",
+      "lineHeight": "default",
+      "textAlign": "start",
+      "children": [
+        "I'm always hungry to learn more and take on more responsibilities within whatever occupation I take on.\nI dedicate myself to doing the best possible job I can for my patrons; their appreciation and loyalty mean the world to me. \n\nSpecialties: Project Management, Event Organization, Copy and Ad Writing/Editing/Proofing, Customer Service, Information Research, Data Entry, English Language and Literature, Graphic Novels, Quality Assurance, and Call Center Experience.\n\nThings I'm currently working on:\n- Practicing workplace mindfulness\n- Growing my leadership skills\n- Library programming\n- Book reviews and books reviews and more book reviews"
+      ],
+      "linkColorTokens": "$undefined",
+      "linkHoverDecoration": "underline",
+      "lineClamp": 3,
+      "hasShowMore": false,
+      "expandButtonText": "развернуть",
+      "shouldCollapseNewLines": false,
+      "noopOverride": false
+    },
+    "bindingKey": {
+      "key": {
+        "value": {
+          "$case": "id",
+          "id": "expandable_text_block_auto-component-aa896bc8-775e-43e4-8de4-0f52d740724f"
+        }
+      },
+      "namespace": ""
+    },
+    "expansionKey": "expandable_text_block_auto-component-aa896bc8-775e-43e4-8de4-0f52d740724f",
+    "expandButtonTextColorExpression": 179,
+    "maxLineCountExpression": 4,
+    "onShowMoreAction": {
+      "actions": [
+        {
+          "$type": "proto.sdui.actions.core.SetState",
+          "value": {
+            "state": {
+              "key": {
+                "key": {
+                  "value": {
+                    "$case": "id",
+                    "id": "expandable_text_block_auto-component-aa896bc8-775e-43e4-8de4-0f52d740724f"
+                  }
+                },
+                "namespace": ""
+              },
+              "value": {
+                "$case": "stringValue",
+                "stringValue": "Expanded"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "onShowLessAction": "$undefined",
+    "textColorExpression": 176,
+    "viewTrackingSpecs": "$undefined",
+    "isExpandableTextV2Enabled": false
+  }
+]
+2: null

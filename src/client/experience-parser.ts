@@ -1,5 +1,3 @@
-import fs from 'fs';
-
 interface WorkExperience {
   position: string;
   companyName: string;
@@ -9,9 +7,7 @@ interface WorkExperience {
   logoUrl: string;
 }
 
-function parseLinkedInExperience(filePath: string): WorkExperience[] {
-  const rawContent = fs.readFileSync(filePath, { encoding: 'utf-8' });
-
+export function parseLinkedInExperience(rawContent: string): WorkExperience[] {
   // === 1. Логотипы по компаниям ===
   const logoMap: Record<string, string> = {};
   const logoBlocks = [
@@ -220,8 +216,3 @@ function parseLinkedInExperience(filePath: string): WorkExperience[] {
 
   return experiences;
 }
-
-// === ЗАПУСК ===
-const result = parseLinkedInExperience('./experience2.json');
-console.log('=== РЕЗУЛЬТАТ ИЗВЛЕЧЕНИЯ ДАННЫХ ===');
-console.log(JSON.stringify(result, null, 2));

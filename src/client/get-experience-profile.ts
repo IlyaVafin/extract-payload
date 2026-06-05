@@ -1,7 +1,7 @@
 import fetchCookie from 'fetch-cookie';
 import fetchBase, { RequestInit, Response } from 'node-fetch';
 import { CookieJar } from 'tough-cookie';
-import fs from 'fs';
+import { parseLinkedInExperience } from './experience-parser';
 type FetchFunction = (url: string, init?: RequestInit) => Promise<Response>;
 const nodeFetch: FetchFunction = (url, init) => fetchBase(url, init);
 const fetch = fetchCookie<string, RequestInit, Response>(
@@ -161,7 +161,6 @@ export class LinkedInProfileCardsBelowActivityClient {
       if (response.status === 999) {
         throw new Error('LinkedIn account banned');
       }
-      console.log(response);
       throw new Error(`linkedin: status ${response.status}: ${snippet}`);
     }
 
@@ -169,22 +168,17 @@ export class LinkedInProfileCardsBelowActivityClient {
   }
 }
 
-export async function postLinkedInProfileCardsBelowActivity(
-  params: ProfileCardsBelowActivityRequestParams,
-) {
-  const client = new LinkedInProfileCardsBelowActivityClient();
-  return client.postProfileCardsBelowActivity(params);
-}
+const exp = new LinkedInProfileCardsBelowActivityClient();
 
-postLinkedInProfileCardsBelowActivity({
-  cookie:
-    'bcookie="v=2&0bff0c56-5f68-44ef-8530-9b087162b5cd"; bscookie="v=1&2025121307340691143906-79e0-47d2-8ec9-da7ef5f039b6AQGUdUbRCwoxZNQ0om8uuaDZ9rjNI7dV"; li_alerts=e30=; li_gc=MTsyMTsxNzY2ODQzMzk4OzI7MDIxvo25DqkPC857BEio9Bt1+63x5PRJqy/hKEt02UTQl40=; li_theme=light; li_theme_set=app; dfpfpt=d0b881af6df348b0b74f9b71879abbd5; _pxvid=d7dee901-e32a-11f0-967d-bc8e2be6d821; aam_uuid=05823511190603889814147778553090456797; timezone=Europe/Moscow; gpv_pn=developer.linkedin.com%2Fproduct-catalog; s_tp=5751; _uetvid=d1d0866001ad11f1944a97ff33bbda45; mbox=PC#77e9a1d9ae4c4141aa9e4aa4b3f4f836.37_0#1794666480|session#8a8d2e3177234eb99e4c3447b1923772#1779116340; s_ips=911; s_tslv=1779114481584; visit=v=1&M; _gcl_au=1.1.961100378.1774812283.308313686.1779809921.1779809946; fid=AQFjfo6GH5VaeAAAAZ6JGZGvuqSCJN2rObpI_3VTl_-CXlbZACqGsUhajT5gvqkRqrl-II0JKZbIyg; g_state={"i_l":0}; li_rm=AQF2-NcUBiGsbAAAAZ6MiSHsXpak3bMoJ61Hj0TadOIPAURXkhKM9ntBmWgFWjcNo0nDyZBaVNcijPU5HBo2NSsWx-Y5ljx8Y0Xg0NCGh8LHnVddGqNaEau-lISIfy9-QFv0_Rr4qTRG3DwOLhZDGmUq7cJMLRWBj7eI35N5nAQIRVzTjpfZtt1Qfs1ZZxsvlOdesY5FaMqDLeSkrZ6KM2FumW8UqPn5DgrAUFb_1yTEU6IZbVUogph9E6OfdZ-b6I2JtGRXlHpIkJPW8p4ltbNP2XVgFfxh9KKQ1ALrOVC7XKLME_yqH7YCxKRoApUxPWrQ3PPCt_MaDhhkR3rgBw; liap=true; li_at=AQEDAWQo7A0EMEjUAAABnoyJIcgAAAGesJWlyFYAVoTMWnqhahT_7vom9AUophehHgZnVVK6zXQSAdbDpb5ylB30XiPbng3B7Rbf6QEl6DlgXUqmc1s_LwyiMVYK3ACswSii_SNq0T25PmTZuHv7TNEr; JSESSIONID="ajax:3380652305041475523"; lang=v=2&lang=ru-ru; AMCVS_14215E3D5995C57C0A495C55%40AdobeOrg=1; AMCV_14215E3D5995C57C0A495C55%40AdobeOrg=-637568504%7CMCIDTS%7C20609%7CMCMID%7C06383176159209553264125562938956336918%7CMCAAMLH-1781197078%7C6%7CMCAAMB-1781197078%7CRKhpRz8krg2tLO6pguXWp5olkAcUniQYPHaMWWgdJ3xzPWQmdj0y%7CMCOPTOUT-1780599478s%7CNONE%7CvVersion%7C5.1.1%7CMCCIDH%7C1117101140; fptctx2=AQErVxVd%252fJAG5x6FdpCoDCz%252f2mblbiuq%252f98UA243ddfXVZU5V9c%252b9%252bd745OjSBE8HncXwt3O%252faFthZHdNq06%252fGWmgupxUPuvyW4%252bQssmF9gMS%252bWdaLbqiM7lSBhC%252fe%252bozD6ITb7aGmD1ZVLfbfetBxgkIeLCcH3YaemeM07ujNwYWU%252fIUsw4Wjexr8FceSueS8%252fOice7s3ylsSZ9bL9fofskqnHahoHGkMOvMkK%252f%252bDXMkX7bPuhdsFlwyWJNOI%252bvtOFB%252fJ0%252bNJRRNp7vzvN53ihU2JtoDilte0uf2LFUfkjKLyaXmiCNf45XETXrJhPpqoIdWSC%252ba0xBPC%252brEBjIDnY3fb5VeHhdnx0TqARzbjNOOG79dKREssDw67qPYVrexDE%253d; lidc="b=VB69:s=V:r=V:a=V:p=V:g=5251:u=10:x=1:i=1780595202:t=1780681602:v=2:sig=AQH5486G1K0ogPYfOLHMGOu8XYtw9apn"; __cf_bm=IOO9I5fUy7ezx6xtUAlE6IACS3a.NrQyuyAWBfbu..Y-1780602371.6943974-1.0.1.1-1MB3icbOwDuqfDXneLl9pGJyUVZjiygJrDo5nmi5M6ujVskXdqI2cvdj7sxqudL0mwZ4t8py1TevMp7tWGVXDB7Qt94g_0kOmEBd_x630JXi5D0baXk6iPdvWFfIp01N; li_mc=MTsyMTsxNzgwNjAyODQ0OzI7MDIxD0BefSfKTzLACGr5J+/Zsf1mBsIoMrLn5K47rK0bCM0=; UserMatchHistory=AQLIywAtaxyygAAAAZ6UNbykel1o_tOwJPz42NREFNctd0fGXvQTXxjEsrQSfTFA5Opx9ig1QiUcEx2l7BYYdAbT7MkF_c5l5ESr4xDCIOJnHFl5e_wJhJfwp8gcKDLwy9QCWpavnvncvqlqf1qyGHw2dIauThpLe2nBSKMwZGXKM70dp5vj-RU7Qe6SlGX8bo1Y8FhEEZKphTpp3Ir_BYwGKKV0GSINI9oKh1CiG8AAC0VuKd3P7MD322zjp5jzz3ixVoJiXwpuBKmSdH2d1YQZjgkRwVE7XmcSIPDTDxQ1Gll12Ug4bTaixyg1Zld8yMt4TZiEu_keEj-WVkxnmzUNFGSaeo9oRFb3kCv3pB-iU1Grtg; sdui_ver=sdui-flagship:0.1.42094+SduiFlagship0',
-  vanityName: 'nikita-kuharchuk-34b493338',
-  vieweeProfileId: 'ACoAAFTJ3ysB9oQZvAATJ7iH374cdN9RmI5uviU',
-})
+exp
+  .postProfileCardsBelowActivity({
+    cookie:
+      'bcookie="v=2&0bff0c56-5f68-44ef-8530-9b087162b5cd"; bscookie="v=1&2025121307340691143906-79e0-47d2-8ec9-da7ef5f039b6AQGUdUbRCwoxZNQ0om8uuaDZ9rjNI7dV"; li_alerts=e30=; li_gc=MTsyMTsxNzY2ODQzMzk4OzI7MDIxvo25DqkPC857BEio9Bt1+63x5PRJqy/hKEt02UTQl40=; li_theme=light; li_theme_set=app; dfpfpt=d0b881af6df348b0b74f9b71879abbd5; _pxvid=d7dee901-e32a-11f0-967d-bc8e2be6d821; aam_uuid=05823511190603889814147778553090456797; timezone=Europe/Moscow; gpv_pn=developer.linkedin.com%2Fproduct-catalog; s_tp=5751; _uetvid=d1d0866001ad11f1944a97ff33bbda45; mbox=PC#77e9a1d9ae4c4141aa9e4aa4b3f4f836.37_0#1794666480|session#8a8d2e3177234eb99e4c3447b1923772#1779116340; s_ips=911; s_tslv=1779114481584; visit=v=1&M; _gcl_au=1.1.961100378.1774812283.308313686.1779809921.1779809946; fid=AQFjfo6GH5VaeAAAAZ6JGZGvuqSCJN2rObpI_3VTl_-CXlbZACqGsUhajT5gvqkRqrl-II0JKZbIyg; g_state={"i_l":0}; li_rm=AQF2-NcUBiGsbAAAAZ6MiSHsXpak3bMoJ61Hj0TadOIPAURXkhKM9ntBmWgFWjcNo0nDyZBaVNcijPU5HBo2NSsWx-Y5ljx8Y0Xg0NCGh8LHnVddGqNaEau-lISIfy9-QFv0_Rr4qTRG3DwOLhZDGmUq7cJMLRWBj7eI35N5nAQIRVzTjpfZtt1Qfs1ZZxsvlOdesY5FaMqDLeSkrZ6KM2FumW8UqPn5DgrAUFb_1yTEU6IZbVUogph9E6OfdZ-b6I2JtGRXlHpIkJPW8p4ltbNP2XVgFfxh9KKQ1ALrOVC7XKLME_yqH7YCxKRoApUxPWrQ3PPCt_MaDhhkR3rgBw; liap=true; li_at=AQEDAWQo7A0EMEjUAAABnoyJIcgAAAGesJWlyFYAVoTMWnqhahT_7vom9AUophehHgZnVVK6zXQSAdbDpb5ylB30XiPbng3B7Rbf6QEl6DlgXUqmc1s_LwyiMVYK3ACswSii_SNq0T25PmTZuHv7TNEr; JSESSIONID="ajax:3380652305041475523"; sdui_ver=sdui-flagship:0.1.42142+SduiFlagship0; lidc="b=VB69:s=V:r=V:a=V:p=V:g=5252:u=10:x=1:i=1780667479:t=1780753879:v=2:sig=AQEcugzPRcLTpBXsMcyt4aIj7Vyaoupx"; lang=v=2&lang=ru-ru; fptctx2=AQGZKve2TPRVvxacagIO3%252bElP0I8IEivJ3ivTtY%252fS40jGhpwdj2ZsuHQMZWTZucCC%252baK0cbzlNVDHCP0hYBr1AvaNzKUfrPbQ75AGJsXKHsrV3WFe37T8NoalOqgYubqeFZ7lKvnl0sf%252bIz%252fHevYGZrpOEjmptE%252bNhODf0kDkT%252bNKhMtCw5xxXk85NvHiTUxVE9cRZKrisCYv4dVBWdIjqyigk5Ojc86MjP0Yl0JxIQsdFKsJkoZGu%252bvn2P7tTVTvEMUlz9%252fvrxWaSUMuytrohWpD8BWEphkDTMKSFTUl5jIYjETr6GZbpXQdlXrzY3tMJfAsYUMsdnYfrxaNixHX7uVBfcjSG1kjeSACdhD572LEVMge8YlommgcwitUa%252bzc3o%253d; AMCVS_14215E3D5995C57C0A495C55%40AdobeOrg=1; AMCV_14215E3D5995C57C0A495C55%40AdobeOrg=-637568504%7CMCIDTS%7C20609%7CMCMID%7C06383176159209553264125562938956336918%7CMCAAMLH-1781276442%7C6%7CMCAAMB-1781276442%7CRKhpRz8krg2tLO6pguXWp5olkAcUniQYPHaMWWgdJ3xzPWQmdj0y%7CMCOPTOUT-1780678842s%7CNONE%7CvVersion%7C5.1.1%7CMCCIDH%7C1117101140; UserMatchHistory=AQLuUmCD6BXppgAAAZ6Yg5tYFzzKByp_y4JFOtZO9u6BNJQYSg_PBQ9vDECyKYOxSTvOk_YXWujDymmivBhrNyTyED4z0NFyk87_iNrKjn05FVetVaA9b5UIa258ppGfOuKHjOJsZuqrBKWNyXDJy0ryOf2hqBTzXVCMnCl2Zcx1GWTJzyJXyWxbdhl5GeoAByDt8qXYUfLGbIU2vdp_hrUJcEmTj0sExzEfefDEpEz18gd8Er4z6iL0IEFQiL4dFqGSb8KJMkPOrwIEYujQ_kcjCv2CjhL0eYFVeZ8mffXOdbkn64eVHxGfnSQBlqtZMO6FQyR5OsX9n_AdHn9Tsty9urIrAQWFjXf_OiXiWnCqMYjmgA; li_mc=MTsyMTsxNzgwNjc1OTQ2OzI7MDIxvEcQb3iGZkR/4IDWLDRuuCw7BQuUmRUTbMSKpSCyVUI=; __cf_bm=qcvNk.jv9pJK_G3TLrD30ZQ_aXDDcSJ_NN_BZbSig6o-1780676005.9912634-1.0.1.1-dB4Bl0trCSAmlFpPbG1P6Gpe6DiVfdk3eZ.PYyKSn9it.zcrOgusUm3jPRYkLCor0cj9oQcXeIKni5Y4ZDzHxbwxNbK9rOtfvt.0NRPcjKJn9S53e5AuMONLaKoztdZH',
+    vanityName: 'sergey-botalov-5aba1377',
+    vieweeProfileId: 'ACoAABBYkJMBLkUd3FoURt9tjseu_sisM1vYTVU',
+  })
   .then((data) => {
-    fs.writeFileSync('./experience2.json', data.raw);
-    // const result = extractWorkExperience(data.raw);
-    // console.log(result);
+    const result = parseLinkedInExperience(data.raw);
+    console.log(result);
   })
   .catch((err) => console.error(err));
