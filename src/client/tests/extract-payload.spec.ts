@@ -1,4 +1,4 @@
-import { extractPayload } from '../extract-payload';
+import { extractPayload } from '../extract-more-profiles';
 
 describe('extract-payload', () => {
   it('Должен успешно парсить профили', async () => {

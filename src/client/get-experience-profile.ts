@@ -1,7 +1,6 @@
 import fetchCookie from 'fetch-cookie';
 import fetchBase, { RequestInit, Response } from 'node-fetch';
 import { CookieJar } from 'tough-cookie';
-import { parseLinkedInExperience } from './experience-parser';
 type FetchFunction = (url: string, init?: RequestInit) => Promise<Response>;
 const nodeFetch: FetchFunction = (url, init) => fetchBase(url, init);
 const fetch = fetchCookie<string, RequestInit, Response>(
@@ -168,17 +167,220 @@ export class LinkedInProfileCardsBelowActivityClient {
   }
 }
 
-const exp = new LinkedInProfileCardsBelowActivityClient();
+interface WorkExperience {
+  position: string;
+  companyName: string;
+  employmentType: string;
+  period: string;
+  location: string;
+  logoUrl: string;
+}
 
-exp
-  .postProfileCardsBelowActivity({
-    cookie:
-      'bcookie="v=2&0bff0c56-5f68-44ef-8530-9b087162b5cd"; bscookie="v=1&2025121307340691143906-79e0-47d2-8ec9-da7ef5f039b6AQGUdUbRCwoxZNQ0om8uuaDZ9rjNI7dV"; li_alerts=e30=; li_gc=MTsyMTsxNzY2ODQzMzk4OzI7MDIxvo25DqkPC857BEio9Bt1+63x5PRJqy/hKEt02UTQl40=; li_theme=light; li_theme_set=app; dfpfpt=d0b881af6df348b0b74f9b71879abbd5; _pxvid=d7dee901-e32a-11f0-967d-bc8e2be6d821; aam_uuid=05823511190603889814147778553090456797; timezone=Europe/Moscow; gpv_pn=developer.linkedin.com%2Fproduct-catalog; s_tp=5751; _uetvid=d1d0866001ad11f1944a97ff33bbda45; mbox=PC#77e9a1d9ae4c4141aa9e4aa4b3f4f836.37_0#1794666480|session#8a8d2e3177234eb99e4c3447b1923772#1779116340; s_ips=911; s_tslv=1779114481584; visit=v=1&M; _gcl_au=1.1.961100378.1774812283.308313686.1779809921.1779809946; fid=AQFjfo6GH5VaeAAAAZ6JGZGvuqSCJN2rObpI_3VTl_-CXlbZACqGsUhajT5gvqkRqrl-II0JKZbIyg; g_state={"i_l":0}; li_rm=AQF2-NcUBiGsbAAAAZ6MiSHsXpak3bMoJ61Hj0TadOIPAURXkhKM9ntBmWgFWjcNo0nDyZBaVNcijPU5HBo2NSsWx-Y5ljx8Y0Xg0NCGh8LHnVddGqNaEau-lISIfy9-QFv0_Rr4qTRG3DwOLhZDGmUq7cJMLRWBj7eI35N5nAQIRVzTjpfZtt1Qfs1ZZxsvlOdesY5FaMqDLeSkrZ6KM2FumW8UqPn5DgrAUFb_1yTEU6IZbVUogph9E6OfdZ-b6I2JtGRXlHpIkJPW8p4ltbNP2XVgFfxh9KKQ1ALrOVC7XKLME_yqH7YCxKRoApUxPWrQ3PPCt_MaDhhkR3rgBw; liap=true; li_at=AQEDAWQo7A0EMEjUAAABnoyJIcgAAAGesJWlyFYAVoTMWnqhahT_7vom9AUophehHgZnVVK6zXQSAdbDpb5ylB30XiPbng3B7Rbf6QEl6DlgXUqmc1s_LwyiMVYK3ACswSii_SNq0T25PmTZuHv7TNEr; JSESSIONID="ajax:3380652305041475523"; sdui_ver=sdui-flagship:0.1.42142+SduiFlagship0; lidc="b=VB69:s=V:r=V:a=V:p=V:g=5252:u=10:x=1:i=1780667479:t=1780753879:v=2:sig=AQEcugzPRcLTpBXsMcyt4aIj7Vyaoupx"; lang=v=2&lang=ru-ru; fptctx2=AQGZKve2TPRVvxacagIO3%252bElP0I8IEivJ3ivTtY%252fS40jGhpwdj2ZsuHQMZWTZucCC%252baK0cbzlNVDHCP0hYBr1AvaNzKUfrPbQ75AGJsXKHsrV3WFe37T8NoalOqgYubqeFZ7lKvnl0sf%252bIz%252fHevYGZrpOEjmptE%252bNhODf0kDkT%252bNKhMtCw5xxXk85NvHiTUxVE9cRZKrisCYv4dVBWdIjqyigk5Ojc86MjP0Yl0JxIQsdFKsJkoZGu%252bvn2P7tTVTvEMUlz9%252fvrxWaSUMuytrohWpD8BWEphkDTMKSFTUl5jIYjETr6GZbpXQdlXrzY3tMJfAsYUMsdnYfrxaNixHX7uVBfcjSG1kjeSACdhD572LEVMge8YlommgcwitUa%252bzc3o%253d; AMCVS_14215E3D5995C57C0A495C55%40AdobeOrg=1; AMCV_14215E3D5995C57C0A495C55%40AdobeOrg=-637568504%7CMCIDTS%7C20609%7CMCMID%7C06383176159209553264125562938956336918%7CMCAAMLH-1781276442%7C6%7CMCAAMB-1781276442%7CRKhpRz8krg2tLO6pguXWp5olkAcUniQYPHaMWWgdJ3xzPWQmdj0y%7CMCOPTOUT-1780678842s%7CNONE%7CvVersion%7C5.1.1%7CMCCIDH%7C1117101140; UserMatchHistory=AQLuUmCD6BXppgAAAZ6Yg5tYFzzKByp_y4JFOtZO9u6BNJQYSg_PBQ9vDECyKYOxSTvOk_YXWujDymmivBhrNyTyED4z0NFyk87_iNrKjn05FVetVaA9b5UIa258ppGfOuKHjOJsZuqrBKWNyXDJy0ryOf2hqBTzXVCMnCl2Zcx1GWTJzyJXyWxbdhl5GeoAByDt8qXYUfLGbIU2vdp_hrUJcEmTj0sExzEfefDEpEz18gd8Er4z6iL0IEFQiL4dFqGSb8KJMkPOrwIEYujQ_kcjCv2CjhL0eYFVeZ8mffXOdbkn64eVHxGfnSQBlqtZMO6FQyR5OsX9n_AdHn9Tsty9urIrAQWFjXf_OiXiWnCqMYjmgA; li_mc=MTsyMTsxNzgwNjc1OTQ2OzI7MDIxvEcQb3iGZkR/4IDWLDRuuCw7BQuUmRUTbMSKpSCyVUI=; __cf_bm=qcvNk.jv9pJK_G3TLrD30ZQ_aXDDcSJ_NN_BZbSig6o-1780676005.9912634-1.0.1.1-dB4Bl0trCSAmlFpPbG1P6Gpe6DiVfdk3eZ.PYyKSn9it.zcrOgusUm3jPRYkLCor0cj9oQcXeIKni5Y4ZDzHxbwxNbK9rOtfvt.0NRPcjKJn9S53e5AuMONLaKoztdZH',
-    vanityName: 'sergey-botalov-5aba1377',
-    vieweeProfileId: 'ACoAABBYkJMBLkUd3FoURt9tjseu_sisM1vYTVU',
-  })
-  .then((data) => {
-    const result = parseLinkedInExperience(data.raw);
-    console.log(result);
-  })
-  .catch((err) => console.error(err));
+export function parseLinkedInExperience(rawContent: string): WorkExperience[] {
+  const logoMap: Record<string, string> = {};
+  const logoBlocks = [
+    ...rawContent.matchAll(
+      /"a11yText"\s*:\s*"Эмблема организации ([^"]+)"[\s\S]*?"rootUrl"\s*:\s*"([^"]+)"[\s\S]*?"imageRenditions"\s*:\s*\[([\s\S]*?)\]/g,
+    ),
+  ];
+  for (const m of logoBlocks) {
+    const company = m[1];
+    const rootUrl = m[2];
+    const renditions = m[3];
+    const suffixes = [
+      ...renditions.matchAll(/"suffixUrl"\s*:\s*"([^"]+)"/g),
+    ].map((x) => x[1]);
+    const best =
+      suffixes.find((s) => s.includes('200_200')) ||
+      suffixes.find((s) => s.includes('100_100')) ||
+      suffixes[0] ||
+      '';
+    logoMap[company] = best ? `${rootUrl}${best}` : 'Нет фото';
+  }
+
+  // === 2. Собираем все текстовые "children": ["..."] ===
+  const allTexts: { text: string; index: number }[] = [];
+  const textRegex = /"children"\s*:\s*\[\s*"([^"\\]+)"\s*\]/g;
+  let match;
+  while ((match = textRegex.exec(rawContent)) !== null) {
+    const text = match[1].trim();
+    if (
+      text.length > 1 &&
+      !text.startsWith('$L') &&
+      !text.startsWith('$3:') &&
+      !text.startsWith('$11:') &&
+      !text.startsWith('$12:') &&
+      !text.startsWith('$15:') &&
+      !/^[0-9a-f-]{36}$/.test(text) &&
+      !text.startsWith('com.linkedin') &&
+      !text.startsWith('urn:li:') &&
+      !text.startsWith('proto.sdui') &&
+      !text.startsWith('var(') &&
+      !text.startsWith('--') &&
+      !text.startsWith('PresentationStyle') &&
+      !text.startsWith('ColorScheme') &&
+      !['default', 'null', 'true', 'false', 'SHORT_PRESS'].includes(text)
+    ) {
+      allTexts.push({ text, index: match.index });
+    }
+  }
+
+  // === 3. Парсим опыт с определением типа структуры ===
+  const experiences: WorkExperience[] = [];
+  let i = 0;
+
+  while (i < allTexts.length) {
+    const { text } = allTexts[i];
+
+    // Пропускаем заголовки и кнопки
+    if (
+      text === 'Опыт работы' ||
+      text === 'Показать все' ||
+      text === 'Образование'
+    ) {
+      i++;
+      continue;
+    }
+
+    // Ищем строку с "·"
+    if (text.includes('·')) {
+      const parts = text.split('·').map((s) => s.trim());
+      const leftPart = parts[0];
+      const rightPart = parts[1] || '';
+
+      // Определяем тип структуры: смотрим на следующую строку
+      const nextText = i + 1 < allTexts.length ? allTexts[i + 1].text : '';
+      const isGroupedCompany = !nextText.includes('г.');
+
+      if (isGroupedCompany) {
+        // === СТРУКТУРА 2: Группированная компания ===
+        const companyName = allTexts[i - 1]?.text || 'Не указана';
+        const employmentType = leftPart;
+        const overallPeriod = rightPart;
+
+        // Локация компании (если есть)
+        let companyLocation = 'Не указана';
+        let positionsStartIndex = i + 1;
+
+        if (nextText && !nextText.includes('г.') && nextText.length < 100) {
+          companyLocation = nextText;
+          positionsStartIndex = i + 2;
+        }
+
+        // Собираем все позиции этой компании
+        let j = positionsStartIndex;
+        let hasPositions = false;
+
+        while (j < allTexts.length) {
+          const posText = allTexts[j].text;
+
+          // Если нашли новую строку с "·" — это следующая компания
+          if (posText.includes('·')) {
+            break;
+          }
+
+          // Если это заголовок или кнопка — выходим
+          if (
+            posText === 'Опыт работы' ||
+            posText === 'Показать все' ||
+            posText === 'Образование'
+          ) {
+            break;
+          }
+
+          // Это позиция
+          const position = posText;
+          let period = 'Не указан';
+          let location = 'Не указана';
+
+          // Период позиции
+          if (j + 1 < allTexts.length && allTexts[j + 1].text.includes('г.')) {
+            period = allTexts[j + 1].text;
+            j++;
+
+            // Локация позиции (если есть)
+            if (j + 1 < allTexts.length) {
+              const locText = allTexts[j + 1].text;
+              if (
+                !locText.includes('г.') &&
+                locText.length < 100 &&
+                locText !== 'Опыт работы' &&
+                locText !== 'Показать все' &&
+                locText !== 'Образование' &&
+                !locText.includes('навык') &&
+                !locText.includes('«')
+              ) {
+                location = locText;
+                j++;
+              }
+            }
+          }
+
+          experiences.push({
+            position,
+            companyName,
+            employmentType,
+            period,
+            location,
+            logoUrl: logoMap[companyName] || 'Нет фото',
+          });
+
+          hasPositions = true;
+          j++;
+        }
+
+        // Если не нашли ни одной позиции, добавляем хотя бы общую запись
+        if (!hasPositions) {
+          experiences.push({
+            position: 'Не указана',
+            companyName,
+            employmentType,
+            period: overallPeriod,
+            location: companyLocation,
+            logoUrl: logoMap[companyName] || 'Нет фото',
+          });
+        }
+
+        i = j;
+      } else {
+        // === СТРУКТУРА 1: Одиночная позиция ===
+        const position = allTexts[i - 1]?.text || 'Не указана';
+        const companyName = leftPart;
+        const employmentType = rightPart;
+        const period = nextText;
+
+        // Локация (если есть)
+        let location = 'Не указана';
+        if (i + 2 < allTexts.length) {
+          const locText = allTexts[i + 2].text;
+          if (
+            !locText.includes('г.') &&
+            locText.length < 100 &&
+            locText !== 'Опыт работы' &&
+            locText !== 'Показать все' &&
+            locText !== 'Образование' &&
+            !locText.includes('навык') &&
+            !locText.includes('«')
+          ) {
+            location = locText;
+          }
+        }
+
+        experiences.push({
+          position,
+          companyName,
+          employmentType,
+          period,
+          location,
+          logoUrl: logoMap[companyName] || 'Нет фото',
+        });
+
+        i += 3; // Пропускаем: позиция → компания·тип → период → (возможно локация)
+      }
+    } else {
+      i++;
+    }
+  }
+
+  return experiences;
+}

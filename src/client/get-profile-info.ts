@@ -1,15 +1,17 @@
-import fs from 'fs';
 import fetchCookie from 'fetch-cookie';
 import fetchBase, { RequestInit, Response } from 'node-fetch';
 import { CookieJar } from 'tough-cookie';
+
 interface ProfileAbout {
   description: string;
-  topSkills: string[];
+  firstName: string;
+  lastName: string;
 }
 
 function parseLinkedInAbout(rawContent: string): ProfileAbout {
   let description = '';
-  let topSkills: string[] = [];
+
+  // 1. Извлечение описания
   const formatAMatch = rawContent.match(
     /[a-z]:T[a-zA-Z0-9]+,([\s\S]*?)(?=\s*\d+\s*:\s*(?:\[|null|{)|$)/,
   );
@@ -33,77 +35,120 @@ function parseLinkedInAbout(rawContent: string): ProfileAbout {
 
   description = descB.length > descA.length ? descB : descA;
 
-  const skillsRegex =
-    /"(?:Основные навыки|Top Skills)"[\s\S]*?"children"\s*:\s*\[\s*"([^"]+)"\s*\]/;
-  const skillsDataMatch = rawContent.match(skillsRegex);
+  // 2. Извлечение имени (givenName) и фамилии (familyName)
+  const givenNameMatch = rawContent.match(/"givenName"\s*:\s*"([^"]+)"/);
+  const familyNameMatch = rawContent.match(/"familyName"\s*:\s*"([^"]+)"/);
 
-  if (skillsDataMatch) {
-    const skillsText = skillsDataMatch[1];
-    topSkills = skillsText
-      .split(/[•·,]/)
-      .map((s) => s.trim())
-      .filter((s) => s.length > 0);
-  }
+  const firstName = givenNameMatch ? givenNameMatch[1] : '';
+  const lastName = familyNameMatch ? familyNameMatch[1] : '';
 
   return {
+    firstName,
+    lastName,
     description,
-    topSkills,
   };
+}
+
+function parseLinkedInSkills(rawContent: string): string[] {
+  const skills = new Set<string>();
+
+  const visualSkillRegex =
+    /"fontWeight"\s*:\s*"bold"[^}]*?"children"\s*:\s*\[\s*"([^"]+)"\s*\]/g;
+
+  let match;
+  while ((match = visualSkillRegex.exec(rawContent)) !== null) {
+    const skill = match[1].trim();
+    if (skill) {
+      skills.add(skill);
+    }
+  }
+
+  const metaSkillRegex = /"skillName"\s*:\s*"([^"]+)"/g;
+
+  while ((match = metaSkillRegex.exec(rawContent)) !== null) {
+    const skill = match[1].trim();
+    if (skill) {
+      skills.add(skill);
+    }
+  }
+
+  return Array.from(skills);
 }
 
 interface EducationEntry {
   schoolName: string;
   degree: string;
   period: string;
+  url: string | null;
 }
 
 function parseLinkedInEducation(rawContent: string): EducationEntry[] {
-  // 1. Находим секцию образования
-  // Она начинается с EducationTopLevelSection и заканчивается перед следующей крупной секцией (например, CertificationTopLevel)
+  // 1. Вырезаем секцию образования
   const educationSectionMatch = rawContent.match(
-    /EducationTopLevelSection[\s\S]*?(?=CertificationTopLevel|$)/,
+    /EducationTopLevelSection[\s\S]*?(?=CertificationTopLevel|Projects|$)/,
   );
 
-  if (!educationSectionMatch) {
-    return [];
-  }
-
+  if (!educationSectionMatch) return [];
   const sectionText = educationSectionMatch[0];
 
-  // 2. Ищем все текстовые блоки внутри "children": ["Текст"]
-  // В LinkedIn SDUI данные образования обычно идут в строгом порядке:
-  // 1. Название заведения
-  // 2. Описание (степень)
-  // 3. Период
-  const textRegex = /"children"\s*:\s*\[\s*"([^"]+)"\s*\]/g;
-  const allTexts: string[] = [];
-  let match;
+  // 2. Разбиваем на блоки по ключевым словам, которые разделяют записи
+  const blocks = sectionText.split(
+    /education-lockup-view|componentKey|education_lockup/g,
+  );
 
-  while ((match = textRegex.exec(sectionText)) !== null) {
-    const text = match[1].trim();
-    // Игнорируем технические заголовки и пустые строки
-    if (text !== 'Образование' && text !== 'Education' && text.length > 0) {
-      allTexts.push(text);
+  const results: EducationEntry[] = [];
+
+  for (const block of blocks) {
+    // Извлекаем тексты, ИГНОРИРУЯ строки, начинающиеся с "$" или "$L"
+    const textRegex = /"children"\s*:\s*\[\s*"([^$][^"]+?)"/g;
+    const texts: string[] = [];
+    let match;
+
+    while ((match = textRegex.exec(block)) !== null) {
+      const t = match[1].trim();
+      // Убираем заголовки и слишком короткий мусор
+      if (t.length > 2 && !/Образование|Education|Показать все/i.test(t)) {
+        texts.push(t);
+      }
+    }
+
+    // Ищем ссылку на школу или компанию
+    const urlMatch = block.match(
+      /"url"\s*:\s*"(https:\/\/www\.linkedin\.com\/(school|company)\/[^"]+)"/,
+    );
+    const url = urlMatch ? urlMatch[1] : null;
+
+    if (texts.length > 0) {
+      const dateRegex = /([а-я]{3,}\.?\s\d{4}|\d{4}\s*[–-]\s*\d{4})/i;
+      const periodIndex = texts.findIndex((t) => dateRegex.test(t));
+
+      let schoolName = texts[0];
+      let degree = 'Не указано';
+      let period = 'Не указан';
+
+      if (periodIndex !== -1) {
+        // Если нашли дату, то школа обычно за 2 элемента до неё, а степень за 1
+        period = texts[periodIndex];
+        schoolName = texts[periodIndex - 2] || texts[0];
+        degree = texts[periodIndex - 1] || 'Не указано';
+      } else {
+        // Если даты нет (как у Rolling Scopes), берем первые два элемента
+        schoolName = texts[0];
+        degree = texts[1] || 'Не указано';
+      }
+
+      // Финальная проверка: имя школы не должно быть системным кодом
+      if (schoolName && schoolName.length > 3 && !schoolName.startsWith('$')) {
+        results.push({ schoolName, degree, period, url });
+      }
     }
   }
 
-  // 3. Группируем найденные тексты в объекты
-  const education: EducationEntry[] = [];
-
-  // Перебираем массив, распознавая паттерны
-  for (let i = 0; i < allTexts.length; i++) {
-    // LinkedIn период обычно начинается с "С " или содержит даты через дефис/тире
-    // Если текущий элемент похож на период, а предыдущие два были названием и описанием
-    if (allTexts[i].match(/^(С\s\d|From\s\d|\d{4}–\d{4})/)) {
-      education.push({
-        schoolName: allTexts[i - 2] || 'Не указано',
-        degree: allTexts[i - 1] || 'Не указано',
-        period: allTexts[i],
-      });
-    }
-  }
-
-  return education;
+  // Удаляем дубликаты по названию школы
+  return results.filter(
+    (entry, index, self) =>
+      index === self.findIndex((t) => t.schoolName === entry.schoolName),
+  );
 }
 
 type FetchFunction = (url: string, init?: RequestInit) => Promise<Response>;
@@ -115,8 +160,78 @@ const fetch = fetchCookie<string, RequestInit, Response>(
 
 const DEFAULT_BASE_URL = 'https://www.linkedin.com';
 
-const PROFILE_EDUCATION_ACTIVITY_PATH =
-  '/flagship-web/rsc-action/actions/component?componentId=com.linkedin.sdui.generated.profile.dsl.impl.profileCardsBelowActivityPart1&sduiid=com.linkedin.sdui.generated.profile.dsl.impl.profileCardsBelowActivityPart1&parentSpanId=L9kFXy3lfmg%3D';
+// ---------------------------------------------------------------------------
+// Base class — общая логика для всех LinkedIn-клиентов
+// ---------------------------------------------------------------------------
+
+abstract class LinkedInBaseClient {
+  protected readonly baseURL = DEFAULT_BASE_URL.replace(/\/+$|$/g, '');
+
+  protected extractCsrfFromCookie(cookie: string): string {
+    const match = cookie.match(/JSESSIONID="([^"]+)"/);
+    if (!match) {
+      throw new Error('No JSESSIONID found in cookie');
+    }
+    return match[1];
+  }
+
+  protected async warmSession(cookie: string): Promise<void> {
+    await fetch(`${this.baseURL}/feed`, {
+      headers: { Cookie: cookie },
+    });
+  }
+
+  protected async postJSON(
+    url: string,
+    params: {
+      cookie: string;
+      body: unknown;
+      referer: string;
+      signal?: AbortSignal;
+    },
+  ): Promise<string> {
+    const { cookie, body, referer, signal } = params;
+    const csrf = this.extractCsrfFromCookie(cookie);
+
+    const response = await fetch(url, {
+      method: 'POST',
+      signal,
+      headers: {
+        Cookie: cookie,
+        'csrf-token': csrf,
+        'content-type': 'application/json',
+        accept: '*/*',
+        origin: this.baseURL,
+        referer,
+      },
+      body: JSON.stringify(body),
+    });
+
+    const raw = await response.text();
+
+    if (!response.ok) {
+      const snippet = raw.length > 512 ? `${raw.slice(0, 512)}…` : raw;
+      if (response.status === 999) {
+        throw new Error('LinkedIn account banned');
+      }
+      throw new Error(`linkedin: status ${response.status}: ${snippet}`);
+    }
+
+    return raw;
+  }
+
+  protected buildBinding(key: string) {
+    return {
+      type: 'com.linkedin.sdui.components.core.BindingImpl',
+      value: {
+        key,
+        namespace: 'MemoryNamespace',
+      },
+    };
+  }
+}
+
+// ---------------------------------------------------------------------------
 
 export interface ProfileEducationRequestParams {
   cookie: string;
@@ -130,27 +245,12 @@ export interface ProfileCardsAboveActivityResponse {
   raw: string;
 }
 
-export class LinkedInProfileCardsAboveActivityClient {
-  private readonly baseURL = DEFAULT_BASE_URL.replace(/\/+$|$/g, '');
+const PROFILE_EDUCATION_ACTIVITY_PATH =
+  '/flagship-web/rsc-action/actions/component?componentId=com.linkedin.sdui.generated.profile.dsl.impl.profileCardsBelowActivityPart1&sduiid=com.linkedin.sdui.generated.profile.dsl.impl.profileCardsBelowActivityPart1&parentSpanId=L9kFXy3lfmg%3D';
 
+export class LinkedInProfileEducation extends LinkedInBaseClient {
   private endpointURL(): string {
     return `${this.baseURL}${PROFILE_EDUCATION_ACTIVITY_PATH}`;
-  }
-
-  private extractCsrfFromCookie(cookie: string): string {
-    const match = cookie.match(/JSESSIONID="([^"]+)"/);
-    if (!match) {
-      throw new Error('No JSESSIONID found in cookie');
-    }
-    return match[1];
-  }
-
-  private async warmSession(cookie: string) {
-    await fetch(`${this.baseURL}/feed`, {
-      headers: {
-        Cookie: cookie,
-      },
-    });
   }
 
   private buildRequestBody(params: {
@@ -186,66 +286,25 @@ export class LinkedInProfileCardsAboveActivityClient {
     };
   }
 
-  private buildBinding(key: string) {
-    return {
-      type: 'com.linkedin.sdui.components.core.BindingImpl',
-      value: {
-        key,
-        namespace: 'MemoryNamespace',
-      },
-    };
-  }
-
-  async postProfileCardsAboveActivity(
+  async postProfileEducation(
     params: ProfileEducationRequestParams,
   ): Promise<ProfileCardsAboveActivityResponse> {
     const { cookie, vanityName, isSelfView = false, referer, signal } = params;
 
     await this.warmSession(cookie);
-    const csrf = this.extractCsrfFromCookie(cookie);
 
-    const body = this.buildRequestBody({ vanityName, isSelfView });
-
-    const response = await fetch(this.endpointURL(), {
-      method: 'POST',
+    const raw = await this.postJSON(this.endpointURL(), {
+      cookie,
+      body: this.buildRequestBody({ vanityName, isSelfView }),
+      referer: referer ?? `${this.baseURL}/in/${vanityName}/`,
       signal,
-      headers: {
-        Cookie: cookie,
-        'csrf-token': csrf,
-        'content-type': 'application/json',
-        accept: '*/*',
-        origin: this.baseURL,
-        referer: referer ?? `${this.baseURL}/in/${vanityName}/`,
-      },
-      body: JSON.stringify(body),
     });
-
-    const raw = await response.text();
-
-    if (!response.ok) {
-      const snippet = raw.length > 512 ? `${raw.slice(0, 512)}…` : raw;
-      if (response.status === 999) {
-        throw new Error('LinkedIn account banned');
-      }
-      throw new Error(`linkedin: status ${response.status}: ${snippet}`);
-    }
 
     return { raw };
   }
 }
 
-// const linkedin = new LinkedInProfileCardsAboveActivityClient();
-// linkedin
-//   .postProfileCardsAboveActivity({
-//     cookie:
-//       'bcookie="v=2&0bff0c56-5f68-44ef-8530-9b087162b5cd"; bscookie="v=1&2025121307340691143906-79e0-47d2-8ec9-da7ef5f039b6AQGUdUbRCwoxZNQ0om8uuaDZ9rjNI7dV"; li_alerts=e30=; li_gc=MTsyMTsxNzY2ODQzMzk4OzI7MDIxvo25DqkPC857BEio9Bt1+63x5PRJqy/hKEt02UTQl40=; li_theme=light; li_theme_set=app; dfpfpt=d0b881af6df348b0b74f9b71879abbd5; _pxvid=d7dee901-e32a-11f0-967d-bc8e2be6d821; aam_uuid=05823511190603889814147778553090456797; timezone=Europe/Moscow; gpv_pn=developer.linkedin.com%2Fproduct-catalog; s_tp=5751; _uetvid=d1d0866001ad11f1944a97ff33bbda45; mbox=PC#77e9a1d9ae4c4141aa9e4aa4b3f4f836.37_0#1794666480|session#8a8d2e3177234eb99e4c3447b1923772#1779116340; s_ips=911; s_tslv=1779114481584; visit=v=1&M; _gcl_au=1.1.961100378.1774812283.308313686.1779809921.1779809946; fid=AQFjfo6GH5VaeAAAAZ6JGZGvuqSCJN2rObpI_3VTl_-CXlbZACqGsUhajT5gvqkRqrl-II0JKZbIyg; g_state={"i_l":0}; li_rm=AQF2-NcUBiGsbAAAAZ6MiSHsXpak3bMoJ61Hj0TadOIPAURXkhKM9ntBmWgFWjcNo0nDyZBaVNcijPU5HBo2NSsWx-Y5ljx8Y0Xg0NCGh8LHnVddGqNaEau-lISIfy9-QFv0_Rr4qTRG3DwOLhZDGmUq7cJMLRWBj7eI35N5nAQIRVzTjpfZtt1Qfs1ZZxsvlOdesY5FaMqDLeSkrZ6KM2FumW8UqPn5DgrAUFb_1yTEU6IZbVUogph9E6OfdZ-b6I2JtGRXlHpIkJPW8p4ltbNP2XVgFfxh9KKQ1ALrOVC7XKLME_yqH7YCxKRoApUxPWrQ3PPCt_MaDhhkR3rgBw; liap=true; li_at=AQEDAWQo7A0EMEjUAAABnoyJIcgAAAGesJWlyFYAVoTMWnqhahT_7vom9AUophehHgZnVVK6zXQSAdbDpb5ylB30XiPbng3B7Rbf6QEl6DlgXUqmc1s_LwyiMVYK3ACswSii_SNq0T25PmTZuHv7TNEr; JSESSIONID="ajax:3380652305041475523"; sdui_ver=sdui-flagship:0.1.42142+SduiFlagship0; lidc="b=VB69:s=V:r=V:a=V:p=V:g=5252:u=10:x=1:i=1780667479:t=1780753879:v=2:sig=AQEcugzPRcLTpBXsMcyt4aIj7Vyaoupx"; lang=v=2&lang=ru-ru; fptctx2=AQGZKve2TPRVvxacagIO3%252bElP0I8IEivJ3ivTtY%252fS40jGhpwdj2ZsuHQMZWTZucCC%252baK0cbzlNVDHCP0hYBr1AvaNzKUfrPbQ75AGJsXKHsrV3WFe37T8NoalOqgYubqeFZ7lKvnl0sf%252bIz%252fHevYGZrpOEjmptE%252bNhODf0kDkT%252bNKhMtCw5xxXk85NvHiTUxVE9cRZKrisCYv4dVBWdIjqyigk5Ojc86MjP0Yl0JxIQsdFKsJkoZGu%252bvn2P7tTVTvEMUlz9%252fvrxWaSUMuytrohWpD8BWEphkDTMKSFTUl5jIYjETr6GZbpXQdlXrzY3tMJfAsYUMsdnYfrxaNixHX7uVBfcjSG1kjeSACdhD572LEVMge8YlommgcwitUa%252bzc3o%253d; AMCVS_14215E3D5995C57C0A495C55%40AdobeOrg=1; AMCV_14215E3D5995C57C0A495C55%40AdobeOrg=-637568504%7CMCIDTS%7C20609%7CMCMID%7C06383176159209553264125562938956336918%7CMCAAMLH-1781276442%7C6%7CMCAAMB-1781276442%7CRKhpRz8krg2tLO6pguXWp5olkAcUniQYPHaMWWgdJ3xzPWQmdj0y%7CMCOPTOUT-1780678842s%7CNONE%7CvVersion%7C5.1.1%7CMCCIDH%7C1117101140; __cf_bm=Fq18sP8sPdixe8MbXo07QNEDAqcR5XwKFLiMgdEtUoQ-1780672644.0298758-1.0.1.1-HceHbp8cE47jNNDGfU80tDf1WPdM3CLrrufVvhvpW5bPGYc2j2383N6hqo_kgjo97e0rGqjYZTytA52irql3Vz2tAzKfDFRVhs9BgKV620EA2AcB..rD2IqQXLAAaCN1; li_mc=MTsyMTsxNzgwNjcyODAyOzI7MDIxMzpxqbIf8fbMYTfPIiIa2orjjOQEv2PKKrVGZBFIaZY=; UserMatchHistory=AQI2HCKF698_NAAAAZ6YX3L6kiSkdZvKDzPheZ2h1OGPo1DimDmNOFmcJB7V6mEdpHvLcGr_ZJIQuKCfjPColq1TkN6hbs36Bx1jip4UuLT1XIj7o5vmVVCy8-CEGPll_O3OBUNH0tAFNVrmh8lo2dbbQxEpBYTFB_ZD-1txbu8ipcX7TMkTgzA38ogeUmM8HHcRLs1wWgGww7I9grLg3J79b-f0WAvg1mbpZEBJyBcxP7KZ42OgQ5C_p7rFXs-oorPOmP6cZa_jMVxKg6kU7icX0IAGzK20NsgGOI-MUfke4RcshxJfo2EwhQnV05vGt5Vr21P1L6zppoFiFspNU__TpdZU7qqd4XxmVvRaY4qNr9VJEg',
-//     vanityName: 'ben-barr-7356a9bb',
-//   })
-//   .then((data) => {
-//     const parsedEducation = parseLinkedInEducation(data.raw);
-//     console.log(parsedEducation);
-//   })
-//   .catch((err) => console.error(err));
+// ---------------------------------------------------------------------------
 
 const PROFILE_ABOUT_ACTIVITY_PATH =
   '/flagship-web/rsc-action/actions/component?componentId=com.linkedin.sdui.generated.profile.dsl.impl.profileCardsAboveActivity&sduiid=com.linkedin.sdui.generated.profile.dsl.impl.profileCardsAboveActivity&parentSpanId=gdFeVVEQRFA%3D';
@@ -259,41 +318,9 @@ export interface ProfileCardsAboveActivityRequestParams {
   referer?: string;
 }
 
-export interface ProfileCardsAboveActivityResponse {
-  raw: string;
-}
-
-export class LinkedInProfileAbout {
-  private readonly baseURL = DEFAULT_BASE_URL.replace(/\/+$|$/g, '');
-
+export class LinkedInProfileAbout extends LinkedInBaseClient {
   private endpointURL(): string {
     return `${this.baseURL}${PROFILE_ABOUT_ACTIVITY_PATH}`;
-  }
-
-  private extractCsrfFromCookie(cookie: string): string {
-    const match = cookie.match(/JSESSIONID="([^"]+)"/);
-    if (!match) {
-      throw new Error('No JSESSIONID found in cookie');
-    }
-    return match[1];
-  }
-
-  private async warmSession(cookie: string) {
-    await fetch(`${this.baseURL}/feed`, {
-      headers: {
-        Cookie: cookie,
-      },
-    });
-  }
-
-  private buildBinding(key: string) {
-    return {
-      type: 'com.linkedin.sdui.components.core.BindingImpl',
-      value: {
-        key,
-        namespace: 'MemoryNamespace',
-      },
-    };
   }
 
   private buildRequestBody(params: {
@@ -369,53 +396,95 @@ export class LinkedInProfileAbout {
     } = params;
 
     await this.warmSession(cookie);
-    const csrf = this.extractCsrfFromCookie(cookie);
 
-    const body = this.buildRequestBody({
-      vanityName,
-      vieweeProfileId,
-      isSelfView,
-    });
-
-    const response = await fetch(this.endpointURL(), {
-      method: 'POST',
+    const raw = await this.postJSON(this.endpointURL(), {
+      cookie,
+      body: this.buildRequestBody({ vanityName, vieweeProfileId, isSelfView }),
+      referer: referer ?? `${this.baseURL}/in/${vanityName}/`,
       signal,
-      headers: {
-        Cookie: cookie,
-        'csrf-token': csrf,
-        'content-type': 'application/json',
-        accept: '*/*',
-        origin: this.baseURL,
-        referer: referer ?? `${this.baseURL}/in/${vanityName}/`,
-      },
-      body: JSON.stringify(body),
     });
-
-    const raw = await response.text();
-
-    if (!response.ok) {
-      const snippet = raw.length > 512 ? `${raw.slice(0, 512)}…` : raw;
-      if (response.status === 999) {
-        throw new Error('LinkedIn account banned');
-      }
-      console.log(response);
-      throw new Error(`linkedin: status ${response.status}: ${snippet}`);
-    }
 
     return { raw };
   }
 }
 
-const linkedInAbout = new LinkedInProfileAbout();
-linkedInAbout
-  .postProfileCardsAbout({
-    cookie:
-      'bcookie="v=2&0bff0c56-5f68-44ef-8530-9b087162b5cd"; bscookie="v=1&2025121307340691143906-79e0-47d2-8ec9-da7ef5f039b6AQGUdUbRCwoxZNQ0om8uuaDZ9rjNI7dV"; li_alerts=e30=; li_gc=MTsyMTsxNzY2ODQzMzk4OzI7MDIxvo25DqkPC857BEio9Bt1+63x5PRJqy/hKEt02UTQl40=; li_theme=light; li_theme_set=app; dfpfpt=d0b881af6df348b0b74f9b71879abbd5; _pxvid=d7dee901-e32a-11f0-967d-bc8e2be6d821; aam_uuid=05823511190603889814147778553090456797; timezone=Europe/Moscow; gpv_pn=developer.linkedin.com%2Fproduct-catalog; s_tp=5751; _uetvid=d1d0866001ad11f1944a97ff33bbda45; mbox=PC#77e9a1d9ae4c4141aa9e4aa4b3f4f836.37_0#1794666480|session#8a8d2e3177234eb99e4c3447b1923772#1779116340; s_ips=911; s_tslv=1779114481584; visit=v=1&M; _gcl_au=1.1.961100378.1774812283.308313686.1779809921.1779809946; fid=AQFjfo6GH5VaeAAAAZ6JGZGvuqSCJN2rObpI_3VTl_-CXlbZACqGsUhajT5gvqkRqrl-II0JKZbIyg; g_state={"i_l":0}; li_rm=AQF2-NcUBiGsbAAAAZ6MiSHsXpak3bMoJ61Hj0TadOIPAURXkhKM9ntBmWgFWjcNo0nDyZBaVNcijPU5HBo2NSsWx-Y5ljx8Y0Xg0NCGh8LHnVddGqNaEau-lISIfy9-QFv0_Rr4qTRG3DwOLhZDGmUq7cJMLRWBj7eI35N5nAQIRVzTjpfZtt1Qfs1ZZxsvlOdesY5FaMqDLeSkrZ6KM2FumW8UqPn5DgrAUFb_1yTEU6IZbVUogph9E6OfdZ-b6I2JtGRXlHpIkJPW8p4ltbNP2XVgFfxh9KKQ1ALrOVC7XKLME_yqH7YCxKRoApUxPWrQ3PPCt_MaDhhkR3rgBw; liap=true; li_at=AQEDAWQo7A0EMEjUAAABnoyJIcgAAAGesJWlyFYAVoTMWnqhahT_7vom9AUophehHgZnVVK6zXQSAdbDpb5ylB30XiPbng3B7Rbf6QEl6DlgXUqmc1s_LwyiMVYK3ACswSii_SNq0T25PmTZuHv7TNEr; JSESSIONID="ajax:3380652305041475523"; sdui_ver=sdui-flagship:0.1.42142+SduiFlagship0; lidc="b=VB69:s=V:r=V:a=V:p=V:g=5252:u=10:x=1:i=1780667479:t=1780753879:v=2:sig=AQEcugzPRcLTpBXsMcyt4aIj7Vyaoupx"; lang=v=2&lang=ru-ru; fptctx2=AQGZKve2TPRVvxacagIO3%252bElP0I8IEivJ3ivTtY%252fS40jGhpwdj2ZsuHQMZWTZucCC%252baK0cbzlNVDHCP0hYBr1AvaNzKUfrPbQ75AGJsXKHsrV3WFe37T8NoalOqgYubqeFZ7lKvnl0sf%252bIz%252fHevYGZrpOEjmptE%252bNhODf0kDkT%252bNKhMtCw5xxXk85NvHiTUxVE9cRZKrisCYv4dVBWdIjqyigk5Ojc86MjP0Yl0JxIQsdFKsJkoZGu%252bvn2P7tTVTvEMUlz9%252fvrxWaSUMuytrohWpD8BWEphkDTMKSFTUl5jIYjETr6GZbpXQdlXrzY3tMJfAsYUMsdnYfrxaNixHX7uVBfcjSG1kjeSACdhD572LEVMge8YlommgcwitUa%252bzc3o%253d; AMCVS_14215E3D5995C57C0A495C55%40AdobeOrg=1; AMCV_14215E3D5995C57C0A495C55%40AdobeOrg=-637568504%7CMCIDTS%7C20609%7CMCMID%7C06383176159209553264125562938956336918%7CMCAAMLH-1781276442%7C6%7CMCAAMB-1781276442%7CRKhpRz8krg2tLO6pguXWp5olkAcUniQYPHaMWWgdJ3xzPWQmdj0y%7CMCOPTOUT-1780678842s%7CNONE%7CvVersion%7C5.1.1%7CMCCIDH%7C1117101140; UserMatchHistory=AQK4YbUzdJ6yzQAAAZ6YXASJ-6VVwojIGTuDkLMYv1rZp4P3t8PYPMYik609MPlAuIPbSHixWMVBaO31f05iud_NpvL_7ruePgXsMdS8dpX-ZELjkOCddkipPK1snv6fpnhsWDxxkhg3sIA-vQruvTLRRvb3ttOvewi35AG3Rhs_rA3kgHbmTByo5NNhMfd9ZYyGInOx4AZa20kViHvHAAf9G88_EALb9IoA3KcgDXnlM1gNDJSmTK-rQ3R3iCaXsQYbCTNHlTZajHnlEHM3TjgTMkVKGTseNO-PY8WmeoX5Yo_NGihbPlcmc396pmTJDlvYoJ9kchTj4_NIWT946KwrCATI8x55qXHqiOoZa4mblonaaA; __cf_bm=Fq18sP8sPdixe8MbXo07QNEDAqcR5XwKFLiMgdEtUoQ-1780672644.0298758-1.0.1.1-HceHbp8cE47jNNDGfU80tDf1WPdM3CLrrufVvhvpW5bPGYc2j2383N6hqo_kgjo97e0rGqjYZTytA52irql3Vz2tAzKfDFRVhs9BgKV620EA2AcB..rD2IqQXLAAaCN1; li_mc=MTsyMTsxNzgwNjcyODAyOzI7MDIxMzpxqbIf8fbMYTfPIiIa2orjjOQEv2PKKrVGZBFIaZY=',
-    vanityName: 'sergey-botalov-5aba1377',
-    vieweeProfileId: 'ACoAABBYkJMBLkUd3FoURt9tjseu_sisM1vYTVU',
-  })
-  .then((data) => {
-    const parsed = parseLinkedInAbout(data.raw);
-    console.log(parsed);
-  })
-  .catch((err) => console.error(err));
+// ---------------------------------------------------------------------------
+
+export class LinkedInProfileSkills extends LinkedInBaseClient {
+  private endpointURL(): string {
+    return `${this.baseURL}/flagship-web/rsc-action/actions/pagination?sduiid=com.linkedin.sdui.pagers.profile.details.skills`;
+  }
+
+  private buildRequestBody(params: { vanityName: string; profileId: string }) {
+    const { vanityName, profileId } = params;
+
+    const payload = {
+      start: 0,
+      count: 100,
+      vanityName,
+      profileId,
+      filter: 'ProfileSkillCategory_ALL',
+    };
+
+    return {
+      pagerId: 'com.linkedin.sdui.pagers.profile.details.skills',
+
+      clientArguments: {
+        $type: 'proto.sdui.actions.requests.RequestedArguments',
+        payload,
+        requestedStateKeys: [],
+        requestMetadata: {
+          $type: 'proto.sdui.common.RequestMetadata',
+        },
+        states: [],
+        screenId: 'com.linkedin.sdui.flagshipnav.profile.ProfileSkillDetails',
+      },
+
+      paginationRequest: {
+        $type: 'proto.sdui.actions.requests.PaginationRequest',
+        pagerId: 'com.linkedin.sdui.pagers.profile.details.skills',
+
+        requestedArguments: {
+          $type: 'proto.sdui.actions.requests.RequestedArguments',
+          payload,
+          requestedStateKeys: [],
+          requestMetadata: {
+            $type: 'proto.sdui.common.RequestMetadata',
+          },
+        },
+
+        trigger: {
+          $case: 'itemDistanceTrigger',
+          itemDistanceTrigger: {
+            $type: 'proto.sdui.actions.requests.ItemDistanceTrigger',
+            preloadDistance: 3,
+            preloadLength: 250,
+          },
+        },
+
+        retryCount: 2,
+      },
+    };
+  }
+
+  async getSkills(params: {
+    cookie: string;
+    vanityName: string;
+    profileId: string;
+    referer?: string;
+    signal?: AbortSignal;
+  }): Promise<{ raw: string }> {
+    const { cookie, vanityName, profileId, referer, signal } = params;
+
+    await this.warmSession(cookie);
+
+    const raw = await this.postJSON(this.endpointURL(), {
+      cookie,
+      body: this.buildRequestBody({ vanityName, profileId }),
+      referer: referer ?? `${this.baseURL}/in/${vanityName}/`,
+      signal,
+    });
+
+    return { raw };
+  }
+}
