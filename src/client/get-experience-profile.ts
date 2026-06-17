@@ -1,7 +1,8 @@
 import fetchCookie from 'fetch-cookie';
+import fs from 'fs';
 import fetchBase, { RequestInit, Response } from 'node-fetch';
 import { CookieJar } from 'tough-cookie';
-import fs from 'fs';
+import { parseSDUI } from './parseSDUI';
 type FetchFunction = (url: string, init?: RequestInit) => Promise<Response>;
 const nodeFetch: FetchFunction = (url, init) => fetchBase(url, init);
 const fetch = fetchCookie<string, RequestInit, Response>(
@@ -168,315 +169,602 @@ export class LinkedInProfileCardsBelowActivityClient {
   }
 }
 
-export interface WorkExperience {
-  position: string;
-  companyName: string;
-  employmentType: string;
+export interface Experience {
+  company: string;
+  role: string;
   period: string;
   location: string;
-  logoUrl: string;
+  workType: string;
 }
 
-export function parseLinkedInExperience(rawContent: string): WorkExperience[] {
-  const logoMap: Record<string, string> = {};
-  const companyNamesSet = new Set<string>();
-
-  // === 1. Извлекаем логотипы и гарантированно получаем чистые названия компаний ===
-  const a11yRegex =
-    /"a11yText"\s*:\s*"(?:Эмблема организации|Company logo for)\s*([^"]+)"/g;
-  let matchA11y;
-  while ((matchA11y = a11yRegex.exec(rawContent)) !== null) {
-    const company = matchA11y[1].trim();
-    companyNamesSet.add(company);
-
-    const chunk = rawContent.substring(matchA11y.index, matchA11y.index + 1500);
-    const rootMatch = chunk.match(/"rootUrl"\s*:\s*"([^"]+)"/);
-    const rendMatch = chunk.match(/"imageRenditions"\s*:\s*\[(.*?)\]/);
-
-    if (rootMatch && rendMatch) {
-      const rootUrl = rootMatch[1];
-      const renditions = rendMatch[1];
-      const suffixes = [
-        ...renditions.matchAll(/"suffixUrl"\s*:\s*"([^"]+)"/g),
-      ].map((x) => x[1]);
-      const best =
-        suffixes.find((s) => s.includes('200_200')) ||
-        suffixes.find((s) => s.includes('100_100')) ||
-        suffixes[0] ||
-        '';
-      logoMap[company] = best ? `${rootUrl}${best}` : 'Нет фото';
-    } else {
-      if (!logoMap[company]) logoMap[company] = 'Нет фото';
-    }
-  }
-
-  // Названия компаний в разделе связей с навыками — для бэкапа без картинок
-  const skillsRegexRu = /"Навыки для должности «[^»]+ в организации ([^»]+)»"/g;
-  let skMatch;
-  while ((skMatch = skillsRegexRu.exec(rawContent)) !== null) {
-    companyNamesSet.add(skMatch[1].trim());
-  }
-  const skillsRegexEn = /"Skills for .*? at ([^"]+)"/g;
-  while ((skMatch = skillsRegexEn.exec(rawContent)) !== null) {
-    companyNamesSet.add(skMatch[1].trim());
-  }
-
-  // === 2. Вспомогательные функции, спасающие склеивания типа «Apple · Contract» ===
-  const isCompany = (s: string) => {
-    const text = s.trim();
-    if (companyNamesSet.has(text)) return true;
-    if (text.includes('·')) {
-      const companyPart = text.split('·')[0].trim();
-      if (companyNamesSet.has(companyPart)) return true;
-    }
-    return false;
-  };
-
-  const getCompanyBase = (s: string) => {
-    if (s.includes('·')) {
-      return s.split('·')[0].trim();
-    }
-    return s.trim();
-  };
-
-  // === 3. Собираем массив только чистых строковых параметров интерфейса ===
-  const allTexts: string[] = [];
-  const textRegex = /"children"\s*:\s*\[\s*"((?:[^"\\]|\\.)*)"\s*\]/g;
-  let matchText;
-  while ((matchText = textRegex.exec(rawContent)) !== null) {
-    let text = matchText[1].replace(/\\"/g, '"').replace(/\\\\/g, '\\').trim();
-
-    // Блокируем парсинг многострочных массивов текста с обязанностями и ID переменных
-    if (text.includes('\\n') || text.includes('\n') || text.length > 150)
-      continue;
-    if (
-      text.length > 1 &&
-      !text.startsWith('$L') &&
-      !text.startsWith('$3:') &&
-      !text.startsWith('$11:') &&
-      !text.startsWith('$12:') &&
-      !text.startsWith('$15:') &&
-      !/^[0-9a-f-]{36}$/.test(text) &&
-      !text.startsWith('com.linkedin') &&
-      !text.startsWith('urn:li:') &&
-      !text.startsWith('proto.sdui') &&
-      !text.startsWith('var(') &&
-      !text.startsWith('--') &&
-      !text.startsWith('PresentationStyle') &&
-      !text.startsWith('ColorScheme') &&
-      !['default', 'null', 'true', 'false', 'SHORT_PRESS'].includes(text)
-    ) {
-      allTexts.push(text);
-    }
-  }
-
-  const startIndex = allTexts.findIndex(
-    (t) => t === 'Опыт работы' || t === 'Experience',
+export function extractExperience(sduiJson: any): Experience[] {
+  const experienceSection = findDeep(
+    sduiJson,
+    (node) =>
+      node?.observabilityIdentifier ===
+      'com.linkedin.sdui.impl.profile.components.experienceTopLevelSection',
   );
-  const stopWords = [
-    'Образование',
-    'Education',
-    'Лицензии и сертификаты',
-    'Licenses & certifications',
-    'Проекты',
-    'Projects',
-    'Опыт волонтерской работы',
-    'Volunteer experience',
-  ];
-  let endIndex = allTexts.findIndex(
-    (t, idx) => idx > startIndex && stopWords.includes(t),
+
+  if (!experienceSection) return [];
+
+  const results: Experience[] = [];
+  const items = collectDeep(
+    experienceSection,
+    (node) =>
+      typeof node?.componentKey === 'string' &&
+      node.componentKey.startsWith('entity-collection-item'),
   );
-  if (endIndex === -1) endIndex = allTexts.length;
 
-  const expTexts =
-    startIndex !== -1 ? allTexts.slice(startIndex + 1, endIndex) : allTexts;
-
-  const isPositionPeriod = (s: string) => {
-    if (!s.includes('–') && !s.includes('-')) return false;
-    if (/мес|г\.|год|лет|настоящее время|present|mos|yrs|yr|mo|month/i.test(s))
-      return true;
-    if (/\b(19|20)\d{2}\s*[–-]\s*(19|20)\d{2}\b/.test(s)) return true;
-    return false;
-  };
-
-  const isGroupPeriod = (s: string) => {
-    if (s.includes('–') || s.includes('-')) return false;
-    if (!/мес|г\.|год|лет|mos|yrs|yr|mo|month/i.test(s)) return false;
-    return true;
-  };
-
-  const isEmploymentType = (s: string) => {
-    const lower = s.toLowerCase();
-    return /полный рабочий день|частичная занятость|contract|freelance|internship|self-employed|контракт|внештатный сотрудник|стажировка|самозанятость|сезонная работа|full-time|part-time/i.test(
-      lower,
+  items.forEach((item) => {
+    const subPositions = collectDeep(
+      item,
+      (node) => Array.isArray(node) && node[1] === 'li',
     );
-  };
 
-  // === 4. Парсим логически двигаясь вперёд ===
-  const experiences: WorkExperience[] = [];
-  let i = 0;
+    if (subPositions.length > 0) {
+      // КЕЙС 1: Группа (Компания -> Роли)
+      const headerTexts = getVisibleTexts(item, true);
+      const companyName = headerTexts[0] || 'Unknown Company';
 
-  while (i < expTexts.length) {
-    if (
-      ['Показать все', 'Скрыть', 'развернуть', 'свернуть'].includes(expTexts[i])
-    ) {
-      i++;
-      continue;
-    }
-
-    // -------------------------------------
-    // СТРУКТУРА 1: Одиночная должность в рамках компании
-    // Выглядит как: i -> Должность | i+1 -> Компании(и занятость) | i+2 -> Период
-    if (i + 1 < expTexts.length && isCompany(expTexts[i + 1])) {
-      const position = expTexts[i];
-      const companyRaw = expTexts[i + 1];
-      const companyName = getCompanyBase(companyRaw);
-      let empType = 'Не указан';
-
-      if (companyRaw.includes('·')) {
-        empType = companyRaw.split('·')[1].trim();
-      }
-      i += 2;
-
-      let period = 'Не указан';
-      if (i < expTexts.length && isPositionPeriod(expTexts[i])) {
-        period = expTexts[i];
-        i++;
-      }
-
-      let location = 'Не указана';
-      // Если текущий кусок текста и его +1 не маркируются как начало следующего опыта - это Локация
-      if (i < expTexts.length && !isCompany(expTexts[i])) {
-        const isNextStartOfSingle =
-          i + 1 < expTexts.length && isCompany(expTexts[i + 1]);
+      // Ищем общую локацию компании.
+      // Пропускаем период, длительность (например "3 г. 6 мес."), тип и формат работы
+      let companyLocation = '';
+      for (let i = 1; i < headerTexts.length; i++) {
+        const t = headerTexts[i];
         if (
-          !isNextStartOfSingle &&
-          !['Показать все', 'Скрыть'].includes(expTexts[i])
+          !isPeriod(t) &&
+          !isDuration(t) &&
+          !isWorkFormat(t) &&
+          !isEmploymentType(t) &&
+          isLikelyLocation(t)
         ) {
-          location = expTexts[i];
-          i++;
+          companyLocation = t;
+          break; // Нашли первую подходящую под локацию строку
         }
       }
 
-      experiences.push({
-        position,
-        companyName,
-        employmentType: empType,
-        period,
-        location,
-        logoUrl: logoMap[companyName] || 'Нет фото',
+      subPositions.forEach((pos) => {
+        const posTexts = getVisibleTexts(pos);
+        const mapped = mapFields(posTexts, false, companyLocation);
+        results.push({
+          company: companyName,
+          role: mapped.role,
+          period: mapped.period,
+          location: mapped.location || companyLocation || '',
+          workType: mapped.workType,
+        });
       });
+    } else {
+      // КЕЙС 2: Одиночная запись
+      const texts = getVisibleTexts(item);
+      const mapped = mapFields(texts, true, '');
+      results.push(mapped);
+    }
+  });
 
-      // -------------------------------------
-      // СТРУКТУРА 2: Мульти-блок внутри единой организации
-      // Выглядит как: i -> Название организации | далее её должности с датами друг за другом
-    } else if (isCompany(expTexts[i])) {
-      const companyName = getCompanyBase(expTexts[i]);
-      i++;
+  return results;
+}
 
-      let groupEmpType = 'Не указан';
-      let groupDuration = '';
+/**
+ * Распределяет строки по полям: Роль, Компания, Период, Локация, Формат работы
+ */
+function mapFields(
+  texts: string[],
+  isSingle: boolean,
+  groupLocation: string,
+): Experience {
+  const res: Experience = {
+    role: '',
+    company: '',
+    period: '',
+    location: groupLocation,
+    workType: '',
+  };
+
+  if (texts.length === 0) return res;
+
+  res.role = texts[0];
+  let startIndex = 1;
+
+  if (isSingle && texts.length > 1) {
+    res.company = texts[1];
+    startIndex = 2;
+  }
+
+  let employmentType = '';
+
+  // Проходим по оставшимся строкам и классифицируем их
+  for (let i = startIndex; i < texts.length; i++) {
+    const t = texts[i];
+
+    if (isPeriod(t)) {
+      res.period = t;
+    } else if (isWorkFormat(t)) {
+      res.workType = t;
+    } else if (isEmploymentType(t)) {
+      employmentType = t;
+    } else if (isDuration(t)) {
+      // Это просто строка стажа (например "3 г. 6 мес.") - игнорируем, она уже есть внутри period
+    } else if (isLikelyLocation(t)) {
+      // Если для роли явно указана своя локация, перезаписываем групповую
+      res.location = t;
+    }
+  }
+
+  // Прикрепляем тип занятости ("Полный рабочий день" и т.п.) к периоду, если он был найден отдельно
+  if (
+    employmentType &&
+    res.period &&
+    !res.period.toLowerCase().includes(employmentType.toLowerCase())
+  ) {
+    res.period = `${employmentType} · ${res.period}`;
+  }
+
+  return res;
+}
+
+// ==========================================
+// Строгие классификаторы строк
+// ==========================================
+
+// function isPeriod(text: string): boolean {
+//   const lower = text.toLowerCase();
+//   const hasYearOrPresent =
+//     /(20\d{2}|19\d{2})/.test(text) || lower.includes('настоящее время');
+//   const hasDash =
+//     text.includes('–') || text.includes('-') || text.includes('—');
+//   return hasYearOrPresent && hasDash;
+// }
+
+function isDuration(text: string): boolean {
+  // Исключаем периоды, чтобы не сломать даты
+  if (isPeriod(text)) return false;
+  // Ловит "3 г. 6 мес.", "1 год", "5 лет"
+  return /\d+\s*(г\.|мес|год|лет|года)/i.test(text);
+}
+
+function isEmploymentType(text: string): boolean {
+  const lower = text.toLowerCase();
+  return (
+    lower.includes('полный рабочий день') ||
+    lower.includes('контракт') ||
+    lower.includes('частичная занятость') ||
+    lower.includes('фриланс') ||
+    lower.includes('стажировка') ||
+    lower.includes('сезонная') ||
+    lower.includes('full-time') ||
+    lower.includes('part-time') ||
+    lower.includes('contract')
+  );
+}
+
+function isWorkFormat(text: string): boolean {
+  const lower = text.toLowerCase();
+  return (
+    lower.includes('гибрид') ||
+    lower.includes('удален') ||
+    lower.includes('в офисе') ||
+    lower.includes('remote') ||
+    lower.includes('hybrid') ||
+    lower.includes('on-site')
+  );
+}
+
+function isLikelyLocation(text: string): boolean {
+  if (text.length > 60 || text.length < 3) return false;
+  if (text.includes('\n') || text.includes('•')) return false;
+
+  const lower = text.toLowerCase();
+  if (
+    lower.includes('responsible') ||
+    lower.includes('managed') ||
+    lower.includes('опыт')
+  )
+    return false;
+
+  return true;
+}
+
+// ==========================================
+// Утилиты поиска и обработки текста
+// ==========================================
+
+function getVisibleTexts(node: any, skipList: boolean = false): string[] {
+  const acc: string[] = [];
+  const blacklist = new Set([
+    'div',
+    'hr',
+    'li',
+    'ul',
+    'p',
+    'span',
+    'br',
+    'section',
+    'button',
+    'a',
+    'svg',
+    'path',
+    'figure',
+    'canvas',
+  ]);
+
+  const walk = (n: any) => {
+    if (!n) return;
+    if (typeof n === 'string') {
+      // ВАЖНО: Заменяем неразрывные пробелы (\u00A0) на обычные. Иначе ломаются RegExp.
+      const s = n.replace(/\u00A0/g, ' ').trim();
+      const isTechnical =
+        s.includes('$') ||
+        s.includes('attr-') ||
+        s.startsWith('_') ||
+        s.includes('«');
+      const isDescription =
+        s.length > 100 || s.includes('\n') || s.includes('•');
 
       if (
-        i < expTexts.length &&
-        (expTexts[i].includes('·') || isGroupPeriod(expTexts[i]))
+        s.length > 1 &&
+        !isTechnical &&
+        !isDescription &&
+        !blacklist.has(s.toLowerCase()) &&
+        s !== 'развернуть'
       ) {
-        const parts = expTexts[i].split('·').map((s) => s.trim());
-        if (parts.length === 2) {
-          groupEmpType = parts[0];
-          groupDuration = parts[1];
-        } else if (parts.length === 1) {
-          if (isGroupPeriod(parts[0])) groupDuration = parts[0];
-          else groupEmpType = parts[0];
-        }
-        i++;
+        acc.push(s);
       }
-
-      let groupLocation = 'Не указана';
-
-      while (i < expTexts.length) {
-        const isNextStartOfSingle =
-          i + 1 < expTexts.length && isCompany(expTexts[i + 1]);
-        if (isCompany(expTexts[i]) || isNextStartOfSingle) break;
-
-        let p = i;
-        while (p < expTexts.length && !isPositionPeriod(expTexts[p])) {
-          if (
-            isCompany(expTexts[p]) ||
-            (p + 1 < expTexts.length && isCompany(expTexts[p + 1]))
-          )
-            break;
-          p++;
-        }
-
-        if (p >= expTexts.length || !isPositionPeriod(expTexts[p])) break;
-
-        const N = p - i;
-        let pos = 'Не указана';
-        let emp = groupEmpType;
-
-        if (N === 1) pos = expTexts[i];
-        else if (N === 2) {
-          if (isEmploymentType(expTexts[p - 1])) {
-            pos = expTexts[i];
-            emp = expTexts[p - 1];
-          } else {
-            if (groupLocation === 'Не указана') groupLocation = expTexts[i];
-            pos = expTexts[p - 1];
-          }
-        } else if (N >= 3) {
-          if (groupLocation === 'Не указана') groupLocation = expTexts[i];
-          pos = expTexts[p - 2];
-          emp = expTexts[p - 1];
-        }
-
-        const period = expTexts[p];
-        i = p + 1;
-
-        let location = groupLocation;
-        if (i < expTexts.length) {
-          const isLookingNewNode =
-            isCompany(expTexts[i]) ||
-            (i + 1 < expTexts.length && isCompany(expTexts[i + 1]));
-          if (
-            !isLookingNewNode &&
-            !['Показать все', 'Скрыть'].includes(expTexts[i])
-          ) {
-            location = expTexts[i];
-            i++;
-          }
-        }
-
-        experiences.push({
-          position: pos,
-          companyName,
-          employmentType: emp,
-          period,
-          location,
-          logoUrl: logoMap[companyName] || 'Нет фото',
-        });
-      }
-    } else {
-      i++;
+      return;
     }
-  }
+    if (Array.isArray(n)) {
+      if (skipList && (n[1] === 'li' || n[1] === 'ul')) return;
+      n.forEach((i) => walk(i));
+    } else if (typeof n === 'object') {
+      if (n.expansionKey) return;
+      if (n.children) walk(n.children);
+      if (n.textProps) walk(n.textProps);
+      if (n.text) walk(n.text);
+    }
+  };
 
-  return experiences;
+  walk(node);
+  return Array.from(new Set(acc));
 }
 
+function findDeep(node: any, predicate: (n: any) => boolean): any {
+  if (predicate(node)) return node;
+  if (!node || typeof node !== 'object') return null;
+  for (const key in node) {
+    if (Object.prototype.hasOwnProperty.call(node, key)) {
+      const res = findDeep(node[key], predicate);
+      if (res) return res;
+    }
+  }
+  return null;
+}
+
+function collectDeep(
+  node: any,
+  predicate: (n: any) => boolean,
+  acc: any[] = [],
+): any[] {
+  if (predicate(node)) acc.push(node);
+  if (!node || typeof node !== 'object') return acc;
+  if (Array.isArray(node)) {
+    node.forEach((el) => collectDeep(el, predicate, acc));
+  } else {
+    for (const key in node) {
+      if (Object.prototype.hasOwnProperty.call(node, key)) {
+        collectDeep(node[key], predicate, acc);
+      }
+    }
+  }
+  return acc;
+}
 const linkedIn = new LinkedInProfileCardsBelowActivityClient();
 linkedIn
   .postProfileCardsBelowActivity({
     cookie:
-      'bcookie="v=2&0bff0c56-5f68-44ef-8530-9b087162b5cd"; bscookie="v=1&2025121307340691143906-79e0-47d2-8ec9-da7ef5f039b6AQGUdUbRCwoxZNQ0om8uuaDZ9rjNI7dV"; li_alerts=e30=; li_gc=MTsyMTsxNzY2ODQzMzk4OzI7MDIxvo25DqkPC857BEio9Bt1+63x5PRJqy/hKEt02UTQl40=; li_theme=light; li_theme_set=app; dfpfpt=d0b881af6df348b0b74f9b71879abbd5; _pxvid=d7dee901-e32a-11f0-967d-bc8e2be6d821; aam_uuid=05823511190603889814147778553090456797; timezone=Europe/Moscow; gpv_pn=developer.linkedin.com%2Fproduct-catalog; s_tp=5751; _uetvid=d1d0866001ad11f1944a97ff33bbda45; mbox=PC#77e9a1d9ae4c4141aa9e4aa4b3f4f836.37_0#1794666480|session#8a8d2e3177234eb99e4c3447b1923772#1779116340; s_ips=911; s_tslv=1779114481584; visit=v=1&M; _gcl_au=1.1.961100378.1774812283.308313686.1779809921.1779809946; fid=AQFjfo6GH5VaeAAAAZ6JGZGvuqSCJN2rObpI_3VTl_-CXlbZACqGsUhajT5gvqkRqrl-II0JKZbIyg; g_state={"i_l":0}; li_rm=AQF2-NcUBiGsbAAAAZ6MiSHsXpak3bMoJ61Hj0TadOIPAURXkhKM9ntBmWgFWjcNo0nDyZBaVNcijPU5HBo2NSsWx-Y5ljx8Y0Xg0NCGh8LHnVddGqNaEau-lISIfy9-QFv0_Rr4qTRG3DwOLhZDGmUq7cJMLRWBj7eI35N5nAQIRVzTjpfZtt1Qfs1ZZxsvlOdesY5FaMqDLeSkrZ6KM2FumW8UqPn5DgrAUFb_1yTEU6IZbVUogph9E6OfdZ-b6I2JtGRXlHpIkJPW8p4ltbNP2XVgFfxh9KKQ1ALrOVC7XKLME_yqH7YCxKRoApUxPWrQ3PPCt_MaDhhkR3rgBw; liap=true; li_at=AQEDAWQo7A0EMEjUAAABnoyJIcgAAAGesJWlyFYAVoTMWnqhahT_7vom9AUophehHgZnVVK6zXQSAdbDpb5ylB30XiPbng3B7Rbf6QEl6DlgXUqmc1s_LwyiMVYK3ACswSii_SNq0T25PmTZuHv7TNEr; JSESSIONID="ajax:3380652305041475523"; sdui_ver=sdui-flagship:0.1.42269+SduiFlagship0; lidc="b=VB69:s=V:r=V:a=V:p=V:g=5252:u=10:x=1:i=1780837246:t=1780923646:v=2:sig=AQFfiPTBXTYDo5MeN6UQ2sW_Ve-S4rU5"; fptctx2=AQHF200J5AYuaecq7OhCQyUDFxiSazlUOLQ2xR%252fiIAw6xqD0LnNFred5xA21ESgl0Y%252f4C325DCtN1vEvGbeaj8oAeY%252fvNW7S5Xo%252fN5njpbppe%252fUrsNo1JF297BCryJiQ13Wdi1dVRSr%252br9WgCRfPPgH3GYDdYkyaj4txgbrPiJjh1%252fL1XYnrmeruiUuJdJTtGqvObPsergxgtFbymdop%252bTgGE0YtxkjgDNNdjwlFYCxeOdhKkmivCNq6E5QyO0pXJifkZ3v2Sz0RAyr4K01B4Gh0S%252fO5OJe%252fYgpFZT%252bccfwtdZy2AcS3UhNgzvyu1K57Ibw5fo2B6waiU%252fW5IxrhFElUn0y7ybF99XnE0hofZNSVmtmL5W7F%252bMuhuYHgji%252bOnkE%253d; AMCVS_14215E3D5995C57C0A495C55%40AdobeOrg=1; AMCV_14215E3D5995C57C0A495C55%40AdobeOrg=-637568504%7CMCIDTS%7C20612%7CMCMID%7C06383176159209553264125562938956336918%7CMCAAMLH-1781443282%7C6%7CMCAAMB-1781443282%7CRKhpRz8krg2tLO6pguXWp5olkAcUniQYPHaMWWgdJ3xzPWQmdj0y%7CMCOPTOUT-1780845682s%7CNONE%7CvVersion%7C5.1.1%7CMCCIDH%7C1117101140; PLAY_LANG=ru; lang=v=2&lang=ru-RU; PLAY_SESSION=eyJhbGciOiJIUzI1NiJ9.eyJkYXRhIjp7InNlc3Npb25faWQiOiIwYmQ2NThjYS1mYmRhLTRjZWMtYWIzYy02NzE4NGI3MmMyMmV8MTc4MDgzOTYzNyIsImFsbG93bGlzdCI6Int9IiwicmVjZW50bHktc2VhcmNoZWQiOiIiLCJyZWZlcnJhbC11cmwiOiJodHRwczovL3d3dy5saW5rZWRpbi5jb20vaGVscC9saW5rZWRpbi9hbnN3ZXIvYTEzNTc5MDY_bGFuZz1ydSIsInJlY2VudGx5LXZpZXdlZCI6IiIsIkNQVC1pZCI6IsKpairCsMOQXHUwMDAxQsKZJcKDw65APFx1MDAxOXV7IiwiZXhwZXJpZW5jZSI6IiIsInRyayI6IiJ9LCJuYmYiOjE3ODA4Mzk2MzcsImlhdCI6MTc4MDgzOTYzN30.AyVACvodN9K-PQ-adt_jn8Y0RllxPJ4xgJFKw419MGc; li_mc=MTsyMTsxNzgwODU1MTE3OzE7MDIxzr1XNdynf+Bef8N2dPEuj00UASj1s7y+5nmGHcVFflM=; __cf_bm=F5eCgLButbbM3MAMjSvyWfcKa8CtWIPp9AcS38IP0to-1780855184.8501225-1.0.1.1-UNMqL30zpQEUbu8VLYUO7.S0a8xfQM4JP4O96dSF.vcpP4XgprsNW6WZoFk7cM7ih6NqLAAZq9gPY62FSgYHtMKqOPBqFNGBjCOJ0xte5842eS_qPkr4gAPeWxRlG5_e; UserMatchHistory=AQLqnmLcRLxvcAAAAZ6jPsTPUwaQYRGHYaX-m6RCB5AO8reoxin-eB9fRi3zhHLf21bXx0RqbYSJpULP8jEf-VgboLvWQF3FmT44FQ2UCvFUSEq2Y3qdW9ERiuK0xV6sVWZszuMzzAB2P7PrgeGSb0_jFkdMnIFsWA8n3XZLMoV0S-lwMymucoml1K-swIWW8F9Lcp2yDbVQWBdoI-9ZPHwBlcckxBFLYAdP1LgHoRhonamTCaKvFnXmqZ7RtCF2_upICxzh2lA26ruSZ7YxCQ4al_g4ymAd1f2dkgtoN-6jGXvNCS4B0to6TOxH6yGu_sh_wd_BFy9CZXhRUtBUHKrYdfNZBeTAEqG0eSZ12XoSuNVPtg',
-    vanityName: 'ben-barr-7356a9bb',
-    vieweeProfileId: 'ACoAABmNotkBK1YD87eASNSoNQNmpMSEqP8KO8w',
+      'bcookie="v=2&0bff0c56-5f68-44ef-8530-9b087162b5cd"; bscookie="v=1&2025121307340691143906-79e0-47d2-8ec9-da7ef5f039b6AQGUdUbRCwoxZNQ0om8uuaDZ9rjNI7dV"; li_alerts=e30=; li_gc=MTsyMTsxNzY2ODQzMzk4OzI7MDIxvo25DqkPC857BEio9Bt1+63x5PRJqy/hKEt02UTQl40=; li_theme=light; li_theme_set=app; dfpfpt=d0b881af6df348b0b74f9b71879abbd5; _pxvid=d7dee901-e32a-11f0-967d-bc8e2be6d821; aam_uuid=05823511190603889814147778553090456797; timezone=Europe/Moscow; gpv_pn=developer.linkedin.com%2Fproduct-catalog; s_tp=5751; mbox=PC#77e9a1d9ae4c4141aa9e4aa4b3f4f836.37_0#1794666480|session#8a8d2e3177234eb99e4c3447b1923772#1779116340; s_ips=911; s_tslv=1779114481584; visit=v=1&M; _gcl_au=1.1.961100378.1774812283.308313686.1779809921.1779809946; g_state={"i_l":0}; li_rm=AQF2-NcUBiGsbAAAAZ6MiSHsXpak3bMoJ61Hj0TadOIPAURXkhKM9ntBmWgFWjcNo0nDyZBaVNcijPU5HBo2NSsWx-Y5ljx8Y0Xg0NCGh8LHnVddGqNaEau-lISIfy9-QFv0_Rr4qTRG3DwOLhZDGmUq7cJMLRWBj7eI35N5nAQIRVzTjpfZtt1Qfs1ZZxsvlOdesY5FaMqDLeSkrZ6KM2FumW8UqPn5DgrAUFb_1yTEU6IZbVUogph9E6OfdZ-b6I2JtGRXlHpIkJPW8p4ltbNP2XVgFfxh9KKQ1ALrOVC7XKLME_yqH7YCxKRoApUxPWrQ3PPCt_MaDhhkR3rgBw; liap=true; JSESSIONID="ajax:3380652305041475523"; AMCV_14215E3D5995C57C0A495C55%40AdobeOrg=-637568504%7CMCIDTS%7C20614%7CMCMID%7C06383176159209553264125562938956336918%7CMCAAMLH-1781616203%7C6%7CMCAAMB-1781616203%7CRKhpRz8krg2tLO6pguXWp5olkAcUniQYPHaMWWgdJ3xzPWQmdj0y%7CMCOPTOUT-1781018603s%7CNONE%7CvVersion%7C5.1.1%7CMCCIDH%7C1117101140; _uetvid=d1d0866001ad11f1944a97ff33bbda45; sdui_ver=sdui-flagship:0.1.42733+SduiFlagship0; li_at=AQEDAWQo7A0EMEjUAAABnoyJIcgAAAGe2Wwf5FYAjt63Vx-xcYynqjlyjZ9dq-BPb0jAXjciOIKisFp2GQi2HvAWV1vs0uxIOxZvYkNKw6J7RrQACVaIhKu4OwnU5VV0NYVg65DpAzVvVs-ZGr8wQokg; lidc="b=VB69:s=V:r=V:a=V:p=V:g=5252:u=12:x=1:i=1781159402:t=1781245802:v=2:sig=AQESd6u2zRg860QjcRYW5MUIBeHxI5eC"; li_mc=MTsyMTsxNzgxMTg3NTM2OzE7MDIxIRgPlLzWd4o1kvtl7umSKHQIay6zKkqJYCbBDkg8Nbw=; lang=v=2&lang=ru-ru; fptctx2=AQG1l6gd3rnSvRSB%252fLdVuWB3aNKh8qlcnSdx%252bl54VlA8zoSxgi6QxtPHtNP8FRNy%252b3NxSMh6XLoiiB6B6zSJAadT7bcIVyLMaZDSC1oDDS%252foxpVDF3xi9F2PnlCS7Kjwk%252bDU%252fpyLhRrsTz%252faF2YSaiM2%252bctOG4GRb1lIT35HKFAf17SLQuIh1OqjkB3kg7cGZnj23Fu0G9N7azVzjPCpcIIdjN1%252fXvMmssahLquKKhag1MKAd0cdV6wkxqaOLTEQTzt6s0AIt%252bMFYSkZIU0QdiPcHZAzIUgxBX0xcoEx0Msf1NKh5iHM%252flFqWjbWsQAR%252fVFuR9NFn0oEpH8HQUmKm%252bzN; __cf_bm=BWzRitsWl1.f3D.N0CSFwwz5viDdSHEHmNoTDmUJ2v4-1781187581.8242874-1.0.1.1-vIyFBUv2oyldXBoOoJLWlLRQ4ViiX9uNSD9z_EI9H4kr8TyeLYYlEyDxhpG89lMIS09VqM1RKpL98pqHIn1CNjRKgRC4wAFg6VfJ8EuFIrMGiJzD0CSBBIy0Zlu0sUy.; UserMatchHistory=AQI6zi8VpC_pBQAAAZ63EJ5M6nSWDsH2sOASOfYEQYVmK7u8B0rEMfYAV7gSeIKnf17HfQMEhMdi3n2H_mBmNluCP-9lCKSbAPArGBqM7jkIIGRgk3hV7JKGGhkeyN1A-WevOlX3Ooo1D-PYTF9keFz06nTM7ns0sgYBbUTiie5WpkV7X7SfFyVrydZR1DEK4o4QDxO2WsUPLQ9LY1nqIB7wdRDirugwVgyquFr2XUyPTb0dr5uyonwUFOSBPJJkhwZtxWWuPDPLzCBwMkxlK23wRHLpHnI92lsIWIja6PloxwZcd3dmPLV-F5JDLnvfgpGwKBhGAQ6U8V00rwgodwF9nvOnRLcAG23lwj8V1WgxGZKaqw',
+    // vanityName: 'ben-barr-7356a9bb',
+    // vieweeProfileId: 'ACoAABmNotkBK1YD87eASNSoNQNmpMSEqP8KO8w',
+
+    // vanityName: 'mdemenshina',
+    // vieweeProfileId: 'ACoAAFtVCs8BimDBo_Ysv6EuvhGytHlm6w1opV0',
+
+    vanityName: 'sergey-botalov-5aba1377',
+    vieweeProfileId: 'ACoAABBYkJMBLkUd3FoURt9tjseu_sisM1vYTVU',
   })
   .then((res) => {
-    fs.writeFileSync('raw.txt', res.raw);
-    const experience = parseLinkedInExperience(res.raw);
+    const obj = parseSDUI(res.raw);
+    fs.writeFileSync('./res.json', JSON.stringify(obj, null, 2), {
+      encoding: 'utf-8',
+    });
+    const experience = extractExperiences(obj);
     console.log(experience);
   })
   .catch((err) => {
     console.error(err);
   });
+
+export interface Experience {
+  company: string;
+  role: string;
+  period: string;
+  location: string;
+  workType: string;
+}
+
+type AnyNode = any;
+
+const TEXT_LINE_MODULE_ID = '85b20fca39223dffe536dd03122e5f56';
+const EXPERIENCE_SECTION_ID =
+  'com.linkedin.sdui.impl.profile.components.experienceTopLevelSection';
+
+function walk(node: AnyNode, visit: (n: AnyNode) => void): void {
+  if (node === null || node === undefined || typeof node !== 'object') return;
+  if (Array.isArray(node)) {
+    node.forEach((c) => walk(c, visit));
+    return;
+  }
+  if (node.$$typeof === 'react.element') visit(node);
+  for (const k of Object.keys(node)) walk(node[k], visit);
+}
+
+function walkSkip(
+  node: AnyNode,
+  skipType: string,
+  visit: (n: AnyNode) => void,
+): void {
+  if (node === null || node === undefined || typeof node !== 'object') return;
+  if (Array.isArray(node)) {
+    node.forEach((c) => walkSkip(c, skipType, visit));
+    return;
+  }
+  if (node.$$typeof === 'react.element') {
+    if (node.type === skipType) return;
+    visit(node);
+  }
+  for (const k of Object.keys(node)) walkSkip(node[k], skipType, visit);
+}
+
+function findFirst<T>(node: AnyNode, pred: (n: AnyNode) => T | null): T | null {
+  let result: T | null = null;
+  walk(node, (n) => {
+    if (result === null) {
+      const v = pred(n);
+      if (v !== null) result = v;
+    }
+  });
+  return result;
+}
+
+function pText(node: AnyNode): string | null {
+  if (node?.type !== 'p') return null;
+  const c = node?.props?.children;
+  if (typeof c === 'string' && c.trim()) return c.trim();
+  if (Array.isArray(c)) {
+    const strs = c.filter((x: any) => typeof x === 'string' && x.trim());
+    if (strs.length === 1) return strs[0].trim();
+  }
+  return null;
+}
+
+interface TextLine {
+  text: string;
+  colorExpression: number;
+}
+
+function textLine(node: AnyNode): TextLine | null {
+  if (node?.type?.moduleId !== TEXT_LINE_MODULE_ID) return null;
+  const children = node?.props?.textProps?.children;
+  const colorExpression = node?.props?.textColorExpression ?? 179;
+  let text: string | null = null;
+  if (typeof children === 'string' && children.trim()) text = children.trim();
+  else if (Array.isArray(children)) {
+    const strs = children.filter((x: any) => typeof x === 'string' && x.trim());
+    if (strs.length >= 1) text = strs.join('').trim();
+  }
+  return text ? { text, colorExpression } : null;
+}
+
+const PERIOD_RE = /\d{4}|настоящее\s+время|present/i;
+
+const WORK_TYPE_TOKENS = [
+  'удаленная работа',
+  'удалённая работа',
+  'remote',
+  'гибридный формат работы',
+  'гибридный',
+  'hybrid',
+  'полный рабочий день',
+  'full-time',
+  'частичная занятость',
+  'part-time',
+  'фриланс',
+  'freelance',
+  'контракт',
+  'contract',
+];
+
+function isPeriod(text: string): boolean {
+  return PERIOD_RE.test(text);
+}
+
+function isWorkType(text: string): boolean {
+  const low = text.toLowerCase().trim();
+  return WORK_TYPE_TOKENS.some((t) => low.includes(t));
+}
+
+function parseCompanyLine(text: string): { company: string; workType: string } {
+  const parts = text.split(/\s*·\s*/);
+  if (parts.length >= 2 && isWorkType(parts[parts.length - 1])) {
+    return {
+      company: parts.slice(0, -1).join(' · ').trim(),
+      workType: parts[parts.length - 1].trim(),
+    };
+  }
+  return { company: text.trim(), workType: '' };
+}
+
+interface RawFields {
+  paragraphs: string[];
+  textLines: TextLine[];
+}
+
+function collectFields(node: AnyNode, skipType?: string): RawFields {
+  const paragraphs: string[] = [];
+  const textLines_: TextLine[] = [];
+  const visitor = (n: AnyNode) => {
+    const p = pText(n);
+    if (p) {
+      paragraphs.push(p);
+      return;
+    }
+    const tl = textLine(n);
+    if (tl) textLines_.push(tl);
+  };
+  if (skipType) walkSkip(node, skipType, visitor);
+  else walk(node, visitor);
+  return { paragraphs, textLines: textLines_ };
+}
+
+interface PositionData {
+  role: string;
+  period: string;
+  workType: string;
+  location: string;
+}
+
+function classifySecondaryTextLine(text: string): {
+  period?: string;
+  location?: string;
+  workType?: string;
+} {
+  // Сначала проверяем — это период?
+  if (isPeriod(text)) return { period: text };
+
+  // Иначе пробуем разбить по · и проверить последний фрагмент на workType
+  const parts = text.split(/\s*·\s*/);
+  const last = parts[parts.length - 1];
+
+  if (parts.length >= 2 && isWorkType(last)) {
+    return {
+      location: parts.slice(0, -1).join(' · ').trim(),
+      workType: last.trim(),
+    };
+  }
+
+  // Весь текст — либо workType, либо location
+  if (isWorkType(text)) return { workType: text };
+  return { location: text };
+}
+
+function parseLi(li: AnyNode): PositionData {
+  const { paragraphs, textLines } = collectFields(li);
+  const role = paragraphs[0] ?? '';
+  let period = '',
+    workType = '';
+  const locationParts: string[] = [];
+
+  for (const tl of textLines) {
+    if (tl.colorExpression === 176) {
+      workType = tl.text;
+      continue;
+    }
+
+    const classified = classifySecondaryTextLine(tl.text);
+
+    if (classified.period && !period) period = classified.period;
+    if (classified.workType && !workType) workType = classified.workType;
+    if (classified.location) locationParts.push(classified.location);
+  }
+  return { role, period, workType, location: locationParts.join(', ') };
+}
+
+function parseGrouped(entryNode: AnyNode): Experience[] {
+  const { paragraphs, textLines } = collectFields(entryNode, 'ul'); // не заходим в <ul>
+  const rawCompany = paragraphs[0] ?? '';
+  const parentLocation =
+    textLines.find((tl) => !isPeriod(tl.text) && !isWorkType(tl.text))?.text ??
+    '';
+  const { company } = parseCompanyLine(rawCompany);
+
+  const liNodes: AnyNode[] = [];
+  findFirst(entryNode, (n: AnyNode) => {
+    if (n?.type === 'ul') {
+      const children = n?.props?.children;
+      const arr = Array.isArray(children) ? children : [children];
+      arr.forEach((c: AnyNode) => {
+        if (c?.type === 'li') liNodes.push(c);
+      });
+      return true;
+    }
+    return null;
+  });
+
+  return liNodes.map((li) => {
+    const pos = parseLi(li);
+    return {
+      company,
+      role: pos.role,
+      period: pos.period,
+      workType: pos.workType,
+      location: pos.location || parentLocation,
+    };
+  });
+}
+
+function parseFlat(entryNode: AnyNode): Experience {
+  const { paragraphs, textLines } = collectFields(entryNode);
+  const role = paragraphs[0] ?? '';
+  const { company, workType: workTypeFromP } = parseCompanyLine(
+    paragraphs[1] ?? '',
+  );
+  let period = '',
+    workType = workTypeFromP;
+  const locationParts: string[] = [];
+
+  for (const tl of textLines) {
+    if (tl.colorExpression === 176) {
+      workType = tl.text;
+      continue;
+    }
+
+    const classified = classifySecondaryTextLine(tl.text);
+
+    if (classified.period && !period) period = classified.period;
+    if (classified.workType && !workType) workType = classified.workType;
+    if (classified.location) locationParts.push(classified.location);
+  }
+  return {
+    company,
+    role,
+    period,
+    workType,
+    location: locationParts.join(', '),
+  };
+}
+
+export function extractExperiences(sduiTree: unknown): Experience[] {
+  const experiences: Experience[] = [];
+
+  walk(sduiTree, (sectionCandidate) => {
+    if (
+      sectionCandidate?.props?.observabilityIdentifier !== EXPERIENCE_SECTION_ID
+    )
+      return;
+
+    walk(sectionCandidate, (entryNode) => {
+      const componentKey = entryNode?.props?.componentKey;
+      if (
+        typeof componentKey !== 'string' ||
+        !componentKey.startsWith('entity-collection-item-')
+      )
+        return;
+
+      const hasUl =
+        findFirst(entryNode, (n) => (n?.type === 'ul' ? true : null)) !== null;
+      if (hasUl) experiences.push(...parseGrouped(entryNode));
+      else experiences.push(parseFlat(entryNode));
+    });
+  });
+
+  return experiences;
+}

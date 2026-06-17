@@ -1,7 +1,7 @@
 import fetchCookie from 'fetch-cookie';
 import fetchBase, { RequestInit, Response } from 'node-fetch';
 import { CookieJar } from 'tough-cookie';
-
+import fs from 'fs';
 type FetchFunction = (url: string, init?: RequestInit) => Promise<Response>;
 const nodeFetch: FetchFunction = (url, init) => fetchBase(url, init);
 const fetch = fetchCookie<string, RequestInit, Response>(
@@ -302,3 +302,6 @@ function extractPublicIdentifier(url: string): string | null {
 
   return m ? decodeURIComponent(m[1]) : null;
 }
+const content = fs.readFileSync('./l.json', { encoding: 'utf-8' });
+const res = extractPayload(content);
+console.log(res);

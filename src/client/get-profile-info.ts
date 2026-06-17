@@ -408,6 +408,12 @@ export class LinkedInProfileAbout extends LinkedInBaseClient {
   }
 }
 
+// const l = new LinkedInProfileAbout();
+// l.postProfileCardsAbout({ cookie: '', vanityName: '', vieweeProfileId: '' }).then((res) => {
+//   const about = parseLinkedInAbout(res.raw);
+//   console.log(about);
+// }
+
 // ---------------------------------------------------------------------------
 
 export class LinkedInProfileSkills extends LinkedInBaseClient {
