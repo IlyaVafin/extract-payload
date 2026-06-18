@@ -38,6 +38,18 @@ export class LinkedInProfileCardsBelowActivityClient {
     return `${this.baseURL}${PROFILE_CARDS_BELOW_ACTIVITY_PATH}`;
   }
 
+  private encodeHeaderUrl(url: string): string {
+    try {
+      // If it's already a valid ASCII URL, return as-is
+      return url.split('').every((c) => c.charCodeAt(0) < 128)
+        ? url
+        : new URL(url).toString();
+    } catch {
+      // Fallback: percent-encode only non-ASCII characters
+      return url.replace(/[^\x00-\x7F]/g, (c) => encodeURIComponent(c));
+    }
+  }
+
   private extractCsrfFromCookie(cookie: string): string {
     const match = cookie.match(/JSESSIONID="([^"]+)"/);
     if (!match) {
@@ -154,7 +166,9 @@ export class LinkedInProfileCardsBelowActivityClient {
         'content-type': 'application/json',
         accept: '*/*',
         origin: this.baseURL,
-        referer: referer ?? `${this.baseURL}/in/${vanityName}/`,
+        referer: this.encodeHeaderUrl(
+          referer ?? `${this.baseURL}/in/${vanityName}/`,
+        ),
       },
       body: JSON.stringify(body),
     });
@@ -177,7 +191,7 @@ const linkedIn = new LinkedInProfileCardsBelowActivityClient();
 linkedIn
   .postProfileCardsBelowActivity({
     cookie:
-      'bcookie="v=2&0bff0c56-5f68-44ef-8530-9b087162b5cd"; bscookie="v=1&2025121307340691143906-79e0-47d2-8ec9-da7ef5f039b6AQGUdUbRCwoxZNQ0om8uuaDZ9rjNI7dV"; li_alerts=e30=; li_gc=MTsyMTsxNzY2ODQzMzk4OzI7MDIxvo25DqkPC857BEio9Bt1+63x5PRJqy/hKEt02UTQl40=; li_theme=light; li_theme_set=app; dfpfpt=d0b881af6df348b0b74f9b71879abbd5; _pxvid=d7dee901-e32a-11f0-967d-bc8e2be6d821; aam_uuid=05823511190603889814147778553090456797; timezone=Europe/Moscow; gpv_pn=developer.linkedin.com%2Fproduct-catalog; s_tp=5751; mbox=PC#77e9a1d9ae4c4141aa9e4aa4b3f4f836.37_0#1794666480|session#8a8d2e3177234eb99e4c3447b1923772#1779116340; s_ips=911; s_tslv=1779114481584; visit=v=1&M; _gcl_au=1.1.961100378.1774812283.308313686.1779809921.1779809946; g_state={"i_l":0}; li_rm=AQF2-NcUBiGsbAAAAZ6MiSHsXpak3bMoJ61Hj0TadOIPAURXkhKM9ntBmWgFWjcNo0nDyZBaVNcijPU5HBo2NSsWx-Y5ljx8Y0Xg0NCGh8LHnVddGqNaEau-lISIfy9-QFv0_Rr4qTRG3DwOLhZDGmUq7cJMLRWBj7eI35N5nAQIRVzTjpfZtt1Qfs1ZZxsvlOdesY5FaMqDLeSkrZ6KM2FumW8UqPn5DgrAUFb_1yTEU6IZbVUogph9E6OfdZ-b6I2JtGRXlHpIkJPW8p4ltbNP2XVgFfxh9KKQ1ALrOVC7XKLME_yqH7YCxKRoApUxPWrQ3PPCt_MaDhhkR3rgBw; liap=true; JSESSIONID="ajax:3380652305041475523"; AMCV_14215E3D5995C57C0A495C55%40AdobeOrg=-637568504%7CMCIDTS%7C20614%7CMCMID%7C06383176159209553264125562938956336918%7CMCAAMLH-1781616203%7C6%7CMCAAMB-1781616203%7CRKhpRz8krg2tLO6pguXWp5olkAcUniQYPHaMWWgdJ3xzPWQmdj0y%7CMCOPTOUT-1781018603s%7CNONE%7CvVersion%7C5.1.1%7CMCCIDH%7C1117101140; _uetvid=d1d0866001ad11f1944a97ff33bbda45; sdui_ver=sdui-flagship:0.1.42733+SduiFlagship0; li_at=AQEDAWQo7A0EMEjUAAABnoyJIcgAAAGe2Wwf5FYAjt63Vx-xcYynqjlyjZ9dq-BPb0jAXjciOIKisFp2GQi2HvAWV1vs0uxIOxZvYkNKw6J7RrQACVaIhKu4OwnU5VV0NYVg65DpAzVvVs-ZGr8wQokg; lidc="b=VB69:s=V:r=V:a=V:p=V:g=5252:u=12:x=1:i=1781159402:t=1781245802:v=2:sig=AQESd6u2zRg860QjcRYW5MUIBeHxI5eC"; li_mc=MTsyMTsxNzgxMTg3NTM2OzE7MDIxIRgPlLzWd4o1kvtl7umSKHQIay6zKkqJYCbBDkg8Nbw=; lang=v=2&lang=ru-ru; fptctx2=AQG1l6gd3rnSvRSB%252fLdVuWB3aNKh8qlcnSdx%252bl54VlA8zoSxgi6QxtPHtNP8FRNy%252b3NxSMh6XLoiiB6B6zSJAadT7bcIVyLMaZDSC1oDDS%252foxpVDF3xi9F2PnlCS7Kjwk%252bDU%252fpyLhRrsTz%252faF2YSaiM2%252bctOG4GRb1lIT35HKFAf17SLQuIh1OqjkB3kg7cGZnj23Fu0G9N7azVzjPCpcIIdjN1%252fXvMmssahLquKKhag1MKAd0cdV6wkxqaOLTEQTzt6s0AIt%252bMFYSkZIU0QdiPcHZAzIUgxBX0xcoEx0Msf1NKh5iHM%252flFqWjbWsQAR%252fVFuR9NFn0oEpH8HQUmKm%252bzN; __cf_bm=BWzRitsWl1.f3D.N0CSFwwz5viDdSHEHmNoTDmUJ2v4-1781187581.8242874-1.0.1.1-vIyFBUv2oyldXBoOoJLWlLRQ4ViiX9uNSD9z_EI9H4kr8TyeLYYlEyDxhpG89lMIS09VqM1RKpL98pqHIn1CNjRKgRC4wAFg6VfJ8EuFIrMGiJzD0CSBBIy0Zlu0sUy.; UserMatchHistory=AQI6zi8VpC_pBQAAAZ63EJ5M6nSWDsH2sOASOfYEQYVmK7u8B0rEMfYAV7gSeIKnf17HfQMEhMdi3n2H_mBmNluCP-9lCKSbAPArGBqM7jkIIGRgk3hV7JKGGhkeyN1A-WevOlX3Ooo1D-PYTF9keFz06nTM7ns0sgYBbUTiie5WpkV7X7SfFyVrydZR1DEK4o4QDxO2WsUPLQ9LY1nqIB7wdRDirugwVgyquFr2XUyPTb0dr5uyonwUFOSBPJJkhwZtxWWuPDPLzCBwMkxlK23wRHLpHnI92lsIWIja6PloxwZcd3dmPLV-F5JDLnvfgpGwKBhGAQ6U8V00rwgodwF9nvOnRLcAG23lwj8V1WgxGZKaqw',
+      'bcookie="v=2&0bff0c56-5f68-44ef-8530-9b087162b5cd"; bscookie="v=1&2025121307340691143906-79e0-47d2-8ec9-da7ef5f039b6AQGUdUbRCwoxZNQ0om8uuaDZ9rjNI7dV"; li_alerts=e30=; li_gc=MTsyMTsxNzY2ODQzMzk4OzI7MDIxvo25DqkPC857BEio9Bt1+63x5PRJqy/hKEt02UTQl40=; li_theme=light; li_theme_set=app; dfpfpt=d0b881af6df348b0b74f9b71879abbd5; _pxvid=d7dee901-e32a-11f0-967d-bc8e2be6d821; aam_uuid=05823511190603889814147778553090456797; timezone=Europe/Moscow; gpv_pn=developer.linkedin.com%2Fproduct-catalog; s_tp=5751; s_ips=911; visit=v=1&M; _gcl_au=1.1.961100378.1774812283.308313686.1779809921.1779809946; li_rm=AQF2-NcUBiGsbAAAAZ6MiSHsXpak3bMoJ61Hj0TadOIPAURXkhKM9ntBmWgFWjcNo0nDyZBaVNcijPU5HBo2NSsWx-Y5ljx8Y0Xg0NCGh8LHnVddGqNaEau-lISIfy9-QFv0_Rr4qTRG3DwOLhZDGmUq7cJMLRWBj7eI35N5nAQIRVzTjpfZtt1Qfs1ZZxsvlOdesY5FaMqDLeSkrZ6KM2FumW8UqPn5DgrAUFb_1yTEU6IZbVUogph9E6OfdZ-b6I2JtGRXlHpIkJPW8p4ltbNP2XVgFfxh9KKQ1ALrOVC7XKLME_yqH7YCxKRoApUxPWrQ3PPCt_MaDhhkR3rgBw; JSESSIONID="ajax:3380652305041475523"; _uetvid=d1d0866001ad11f1944a97ff33bbda45; mbox=PC#77e9a1d9ae4c4141aa9e4aa4b3f4f836.37_0#1797076970|session#504f7f1f04e547ea9c8e139c51ddd46f#1781526830; s_tslv=1781524975245; g_state={"i_l":1,"i_p":1781717265698}; liap=true; li_at=AQEDAWQo7A0BLDp-AAABntYy2moAAAGe-j9eak4AG1XAnFpNGLyAUl0BgAfm5sA-3B7BqHe0Kn4HW58Y_Lt8QDoR10QuSmO-Q-SyGzofUMvHoIwWV9WOJmo3H2VsuMIXGQW4Kgm5obGHvTOsJbXbTkM6; fid=AQGeeh8BqFrb0wAAAZ7WMt4jtghkDbiV0bllToQpWUQKZXmT0onkcEY8qDCLogCBzr0tNQYxVnAXrw; lidc="b=TB69:s=T:r=T:a=T:p=T:g=5762:u=13:x=1:i=1781712246:t=1781798646:v=2:sig=AQHNTdbuUkQGUKmXu_XeWHmhc-8-5uIN"; AMCV_14215E3D5995C57C0A495C55%40AdobeOrg=-637568504%7CMCIDTS%7C20622%7CMCMID%7C06383176159209553264125562938956336918%7CMCAAMLH-1782323971%7C6%7CMCAAMB-1782323971%7CRKhpRz8krg2tLO6pguXWp5olkAcUniQYPHaMWWgdJ3xzPWQmdj0y%7CMCOPTOUT-1781726371s%7CNONE%7CvVersion%7C5.1.1%7CMCCIDH%7C1117101140; sdui_ver=sdui-flagship:0.1.43445+SduiFlagship0; li_mc=MTsyMTsxNzgxNzY5MjI3OzE7MDIxLedWSkylKakvljhMgECimVtelNy0OoJbGWDw43k2Ppo=; lang=v=2&lang=ru-ru; fptctx2=AQGGir6zSBi%252fPmj1WV18W7G0QvYDO5IZlvXqi9fJ1rcu9lQN1%252fXxpG4ZDt7wjOiyEIPlc8a5WihFjhRwy%252fBf1oUvE8OTT3f%252brdRDlhc8XmIDnI83rf5adz4x1hvZdMLbHyrGI6ZeOqy1oqJdpkzlvArK3oqyZVkI9JsVGbk3Otzu7a0Df2K5Bt%252bZ1QipaAVV5yu7Segl%252fd34qX7bkwT1We1xBFtkvZF%252bpMncBNeBoCUu4tBP2RFHaBC0C01ciFNtDskZywjxD0r9gii9eVeEiwEHPegwYEe%252fdcaJywP0GPovlT878mmX8Uagk2BK5cXRzBETjVLK9yudi1SG4Mt4DyhvYX%252bXleDK%252fnKQ2JzbSo4Ub3j3cqtG5rlpaXMzo4WR23I%253d; __cf_bm=aqNivQqK9ZY9mnuKWLjeZdZS4l..RE4aARUYz9JXV3o-1781769247.879126-1.0.1.1-k1sftIpGqN12fNZ4bySiYoKhxaMBQ4l_WJvN4T48JoEFE6.n0Kg0XHB0f5BIU.AuYslupM9HiwpL1ZsjO31MA5d3vygDiHfdwQHZOFJFIFa2T9qitk6nEJqD_DGGHosj; UserMatchHistory=AQLamZMoGp8u9QAAAZ7ZuX6p8Ap1huzxlKeOIR3l3Xvexmy7THvMfQSLc48x95vpjlcOJ4uLrTc3zbXjXG5QehvlQJL-to7XPoS6tAE71YUFHGCPUBLvQColc4DaM2ytxNt8_Ek0N0BH_tEZUQDXzbc22HQ14775w7OIXd_mRAAoEH0efAGHJaMl2CIY4i22IfM1mZsuRHM6Ga2QBQ6mqR23et-3eVg6AJPQ8a-9sLQcOYODeutRb9QEGeIDSiTfY-pA61X9Qt_QvqKQGilG4oUuFnPclqWenX1YTOeyAadYE5JFPL9M9sWlczuLU4UsyF5ETDK3uK3IAl0koYTWO3xcrG1hK6ordosSsRKVcp6E-U-PYA',
     // vanityName: 'ben-barr-7356a9bb',
     // vieweeProfileId: 'ACoAABmNotkBK1YD87eASNSoNQNmpMSEqP8KO8w',
 
@@ -196,8 +210,11 @@ linkedIn
     // vanityName: 'denis-titkov',
     // vieweeProfileId: 'ACoAABN7m6QBp_ZzkckcJZNiROCpICy20ubulA0',
 
-    vanityName: 'dmitry-kvitkovsky-aa0b19267',
-    vieweeProfileId: 'ACoAAEF7x9gBEAcGKU6tz5q9jNFeG3y20vxajN8',
+    // vanityName: 'dmitry-kvitkovsky-aa0b19267',
+    // vieweeProfileId: 'ACoAAEF7x9gBEAcGKU6tz5q9jNFeG3y20vxajN8',
+
+    vanityName: 'денис-м-5b362687',
+    vieweeProfileId: 'ACoAABJshdcBkKiO4fQ1gR0L29ixGuvypr3N-Ig',
   })
   .then((res) => {
     const obj: unknown = parseSDUI(res.raw);
