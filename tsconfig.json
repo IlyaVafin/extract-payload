@@ -14,7 +14,7 @@
     "sourceMap": true,
     "outDir": "./dist",
     "baseUrl": "./",
-    "types": ["jest"],
+    "types": ["node", "jest"],
     "incremental": false,
     "skipLibCheck": true,
     "strictNullChecks": true,

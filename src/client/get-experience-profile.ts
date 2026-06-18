@@ -1,3 +1,7 @@
+/* eslint-disable @typescript-eslint/no-unsafe-argument */
+/* eslint-disable @typescript-eslint/no-unsafe-return */
+/* eslint-disable @typescript-eslint/no-unsafe-assignment */
+/* eslint-disable @typescript-eslint/no-unsafe-member-access */
 import fetchCookie from 'fetch-cookie';
 import fs from 'fs';
 import fetchBase, { RequestInit, Response } from 'node-fetch';
@@ -169,294 +173,6 @@ export class LinkedInProfileCardsBelowActivityClient {
   }
 }
 
-export interface Experience {
-  company: string;
-  role: string;
-  period: string;
-  location: string;
-  workType: string;
-}
-
-export function extractExperience(sduiJson: any): Experience[] {
-  const experienceSection = findDeep(
-    sduiJson,
-    (node) =>
-      node?.observabilityIdentifier ===
-      'com.linkedin.sdui.impl.profile.components.experienceTopLevelSection',
-  );
-
-  if (!experienceSection) return [];
-
-  const results: Experience[] = [];
-  const items = collectDeep(
-    experienceSection,
-    (node) =>
-      typeof node?.componentKey === 'string' &&
-      node.componentKey.startsWith('entity-collection-item'),
-  );
-
-  items.forEach((item) => {
-    const subPositions = collectDeep(
-      item,
-      (node) => Array.isArray(node) && node[1] === 'li',
-    );
-
-    if (subPositions.length > 0) {
-      // КЕЙС 1: Группа (Компания -> Роли)
-      const headerTexts = getVisibleTexts(item, true);
-      const companyName = headerTexts[0] || 'Unknown Company';
-
-      // Ищем общую локацию компании.
-      // Пропускаем период, длительность (например "3 г. 6 мес."), тип и формат работы
-      let companyLocation = '';
-      for (let i = 1; i < headerTexts.length; i++) {
-        const t = headerTexts[i];
-        if (
-          !isPeriod(t) &&
-          !isDuration(t) &&
-          !isWorkFormat(t) &&
-          !isEmploymentType(t) &&
-          isLikelyLocation(t)
-        ) {
-          companyLocation = t;
-          break; // Нашли первую подходящую под локацию строку
-        }
-      }
-
-      subPositions.forEach((pos) => {
-        const posTexts = getVisibleTexts(pos);
-        const mapped = mapFields(posTexts, false, companyLocation);
-        results.push({
-          company: companyName,
-          role: mapped.role,
-          period: mapped.period,
-          location: mapped.location || companyLocation || '',
-          workType: mapped.workType,
-        });
-      });
-    } else {
-      // КЕЙС 2: Одиночная запись
-      const texts = getVisibleTexts(item);
-      const mapped = mapFields(texts, true, '');
-      results.push(mapped);
-    }
-  });
-
-  return results;
-}
-
-/**
- * Распределяет строки по полям: Роль, Компания, Период, Локация, Формат работы
- */
-function mapFields(
-  texts: string[],
-  isSingle: boolean,
-  groupLocation: string,
-): Experience {
-  const res: Experience = {
-    role: '',
-    company: '',
-    period: '',
-    location: groupLocation,
-    workType: '',
-  };
-
-  if (texts.length === 0) return res;
-
-  res.role = texts[0];
-  let startIndex = 1;
-
-  if (isSingle && texts.length > 1) {
-    res.company = texts[1];
-    startIndex = 2;
-  }
-
-  let employmentType = '';
-
-  // Проходим по оставшимся строкам и классифицируем их
-  for (let i = startIndex; i < texts.length; i++) {
-    const t = texts[i];
-
-    if (isPeriod(t)) {
-      res.period = t;
-    } else if (isWorkFormat(t)) {
-      res.workType = t;
-    } else if (isEmploymentType(t)) {
-      employmentType = t;
-    } else if (isDuration(t)) {
-      // Это просто строка стажа (например "3 г. 6 мес.") - игнорируем, она уже есть внутри period
-    } else if (isLikelyLocation(t)) {
-      // Если для роли явно указана своя локация, перезаписываем групповую
-      res.location = t;
-    }
-  }
-
-  // Прикрепляем тип занятости ("Полный рабочий день" и т.п.) к периоду, если он был найден отдельно
-  if (
-    employmentType &&
-    res.period &&
-    !res.period.toLowerCase().includes(employmentType.toLowerCase())
-  ) {
-    res.period = `${employmentType} · ${res.period}`;
-  }
-
-  return res;
-}
-
-// ==========================================
-// Строгие классификаторы строк
-// ==========================================
-
-// function isPeriod(text: string): boolean {
-//   const lower = text.toLowerCase();
-//   const hasYearOrPresent =
-//     /(20\d{2}|19\d{2})/.test(text) || lower.includes('настоящее время');
-//   const hasDash =
-//     text.includes('–') || text.includes('-') || text.includes('—');
-//   return hasYearOrPresent && hasDash;
-// }
-
-function isDuration(text: string): boolean {
-  // Исключаем периоды, чтобы не сломать даты
-  if (isPeriod(text)) return false;
-  // Ловит "3 г. 6 мес.", "1 год", "5 лет"
-  return /\d+\s*(г\.|мес|год|лет|года)/i.test(text);
-}
-
-function isEmploymentType(text: string): boolean {
-  const lower = text.toLowerCase();
-  return (
-    lower.includes('полный рабочий день') ||
-    lower.includes('контракт') ||
-    lower.includes('частичная занятость') ||
-    lower.includes('фриланс') ||
-    lower.includes('стажировка') ||
-    lower.includes('сезонная') ||
-    lower.includes('full-time') ||
-    lower.includes('part-time') ||
-    lower.includes('contract')
-  );
-}
-
-function isWorkFormat(text: string): boolean {
-  const lower = text.toLowerCase();
-  return (
-    lower.includes('гибрид') ||
-    lower.includes('удален') ||
-    lower.includes('в офисе') ||
-    lower.includes('remote') ||
-    lower.includes('hybrid') ||
-    lower.includes('on-site')
-  );
-}
-
-function isLikelyLocation(text: string): boolean {
-  if (text.length > 60 || text.length < 3) return false;
-  if (text.includes('\n') || text.includes('•')) return false;
-
-  const lower = text.toLowerCase();
-  if (
-    lower.includes('responsible') ||
-    lower.includes('managed') ||
-    lower.includes('опыт')
-  )
-    return false;
-
-  return true;
-}
-
-// ==========================================
-// Утилиты поиска и обработки текста
-// ==========================================
-
-function getVisibleTexts(node: any, skipList: boolean = false): string[] {
-  const acc: string[] = [];
-  const blacklist = new Set([
-    'div',
-    'hr',
-    'li',
-    'ul',
-    'p',
-    'span',
-    'br',
-    'section',
-    'button',
-    'a',
-    'svg',
-    'path',
-    'figure',
-    'canvas',
-  ]);
-
-  const walk = (n: any) => {
-    if (!n) return;
-    if (typeof n === 'string') {
-      // ВАЖНО: Заменяем неразрывные пробелы (\u00A0) на обычные. Иначе ломаются RegExp.
-      const s = n.replace(/\u00A0/g, ' ').trim();
-      const isTechnical =
-        s.includes('$') ||
-        s.includes('attr-') ||
-        s.startsWith('_') ||
-        s.includes('«');
-      const isDescription =
-        s.length > 100 || s.includes('\n') || s.includes('•');
-
-      if (
-        s.length > 1 &&
-        !isTechnical &&
-        !isDescription &&
-        !blacklist.has(s.toLowerCase()) &&
-        s !== 'развернуть'
-      ) {
-        acc.push(s);
-      }
-      return;
-    }
-    if (Array.isArray(n)) {
-      if (skipList && (n[1] === 'li' || n[1] === 'ul')) return;
-      n.forEach((i) => walk(i));
-    } else if (typeof n === 'object') {
-      if (n.expansionKey) return;
-      if (n.children) walk(n.children);
-      if (n.textProps) walk(n.textProps);
-      if (n.text) walk(n.text);
-    }
-  };
-
-  walk(node);
-  return Array.from(new Set(acc));
-}
-
-function findDeep(node: any, predicate: (n: any) => boolean): any {
-  if (predicate(node)) return node;
-  if (!node || typeof node !== 'object') return null;
-  for (const key in node) {
-    if (Object.prototype.hasOwnProperty.call(node, key)) {
-      const res = findDeep(node[key], predicate);
-      if (res) return res;
-    }
-  }
-  return null;
-}
-
-function collectDeep(
-  node: any,
-  predicate: (n: any) => boolean,
-  acc: any[] = [],
-): any[] {
-  if (predicate(node)) acc.push(node);
-  if (!node || typeof node !== 'object') return acc;
-  if (Array.isArray(node)) {
-    node.forEach((el) => collectDeep(el, predicate, acc));
-  } else {
-    for (const key in node) {
-      if (Object.prototype.hasOwnProperty.call(node, key)) {
-        collectDeep(node[key], predicate, acc);
-      }
-    }
-  }
-  return acc;
-}
 const linkedIn = new LinkedInProfileCardsBelowActivityClient();
 linkedIn
   .postProfileCardsBelowActivity({
@@ -468,11 +184,23 @@ linkedIn
     // vanityName: 'mdemenshina',
     // vieweeProfileId: 'ACoAAFtVCs8BimDBo_Ysv6EuvhGytHlm6w1opV0',
 
-    vanityName: 'sergey-botalov-5aba1377',
-    vieweeProfileId: 'ACoAABBYkJMBLkUd3FoURt9tjseu_sisM1vYTVU',
+    // vanityName: 'sergey-botalov-5aba1377',
+    // vieweeProfileId: 'ACoAABBYkJMBLkUd3FoURt9tjseu_sisM1vYTVU',
+
+    // vanityName: 'liliya-gabdrakhmanova-4b095882',
+    // vieweeProfileId: 'ACoAABGVGcQBLpNo7VqziJss5mRAMVq44toFEso',
+
+    // vanityName: 'svetlana-lavrukhina-278b4458',
+    // vieweeProfileId: 'ACoAAAxFZHwB_14HxOZLQ7GEQbDuX1DEeuAPOHM',
+
+    // vanityName: 'denis-titkov',
+    // vieweeProfileId: 'ACoAABN7m6QBp_ZzkckcJZNiROCpICy20ubulA0',
+
+    vanityName: 'dmitry-kvitkovsky-aa0b19267',
+    vieweeProfileId: 'ACoAAEF7x9gBEAcGKU6tz5q9jNFeG3y20vxajN8',
   })
   .then((res) => {
-    const obj = parseSDUI(res.raw);
+    const obj: unknown = parseSDUI(res.raw);
     fs.writeFileSync('./res.json', JSON.stringify(obj, null, 2), {
       encoding: 'utf-8',
     });
@@ -488,12 +216,40 @@ export interface Experience {
   role: string;
   period: string;
   location: string;
-  workType: string;
+  employmentType: string;
+  workplaceType: string;
+  description: string;
 }
 
 type AnyNode = any;
 
+const EMPLOYMENT_TYPE_TOKENS = [
+  'полный рабочий день',
+  'full-time',
+  'частичная занятость',
+  'part-time',
+  'фриланс',
+  'freelance',
+  'контракт',
+  'contract',
+  'internship',
+  'стажировка',
+];
+
+const WORKPLACE_TYPE_TOKENS = [
+  'удаленная работа',
+  'удалённая работа',
+  'remote',
+  'гибридный формат работы',
+  'гибридный',
+  'hybrid',
+  'работа в офисе',
+  'on-site',
+  'onsite',
+];
+// ЖЕЛАТЕЛЬНО СЛЕДИТЬ ЗА ЭТИМИ ID ДОБАВИТЬ КАКОЙ НИБУДЬ ЛОГ ЧТОБЫ ПОНИМАТЬ ИЗМЕНИЛИСЬ ОНИ ИЛИ НЕТ
 const TEXT_LINE_MODULE_ID = '85b20fca39223dffe536dd03122e5f56';
+const DESCRIPTION_MODULE_ID = '1e9b95c01e7f142c1ba9a289f4714a9c';
 const EXPERIENCE_SECTION_ID =
   'com.linkedin.sdui.impl.profile.components.experienceTopLevelSection';
 
@@ -505,6 +261,39 @@ function walk(node: AnyNode, visit: (n: AnyNode) => void): void {
   }
   if (node.$$typeof === 'react.element') visit(node);
   for (const k of Object.keys(node)) walk(node[k], visit);
+}
+
+function extractDescription(node: AnyNode): string {
+  let description = '';
+  walk(node, (n) => {
+    if (n?.type?.moduleId !== DESCRIPTION_MODULE_ID) return;
+    const children = n?.props?.textProps?.children;
+    if (!Array.isArray(children)) return;
+
+    const lines: string[] = [];
+    for (const item of children) {
+      // children — массив массивов React.Fragment
+      const arr = Array.isArray(item) ? item : [item];
+      for (const fragment of arr) {
+        const fragmentChildren = fragment?.props?.children;
+        if (!Array.isArray(fragmentChildren)) continue;
+        for (const child of fragmentChildren) {
+          if (typeof child === 'string' && child.trim()) {
+            lines.push(child.trim());
+          }
+        }
+      }
+    }
+    description = lines.join('\n');
+  });
+  return description;
+}
+
+function classifyWorkString(text: string): 'employment' | 'workplace' | null {
+  const low = text.toLowerCase().trim();
+  if (EMPLOYMENT_TYPE_TOKENS.some((t) => low.includes(t))) return 'employment';
+  if (WORKPLACE_TYPE_TOKENS.some((t) => low.includes(t))) return 'workplace';
+  return null;
 }
 
 function walkSkip(
@@ -566,41 +355,27 @@ function textLine(node: AnyNode): TextLine | null {
 
 const PERIOD_RE = /\d{4}|настоящее\s+время|present/i;
 
-const WORK_TYPE_TOKENS = [
-  'удаленная работа',
-  'удалённая работа',
-  'remote',
-  'гибридный формат работы',
-  'гибридный',
-  'hybrid',
-  'полный рабочий день',
-  'full-time',
-  'частичная занятость',
-  'part-time',
-  'фриланс',
-  'freelance',
-  'контракт',
-  'contract',
-];
-
 function isPeriod(text: string): boolean {
   return PERIOD_RE.test(text);
 }
 
 function isWorkType(text: string): boolean {
-  const low = text.toLowerCase().trim();
-  return WORK_TYPE_TOKENS.some((t) => low.includes(t));
+  return classifyWorkString(text) !== null;
 }
 
-function parseCompanyLine(text: string): { company: string; workType: string } {
+function parseCompanyLine(text: string): {
+  company: string;
+  employmentType: string;
+} {
   const parts = text.split(/\s*·\s*/);
-  if (parts.length >= 2 && isWorkType(parts[parts.length - 1])) {
+  const last = parts[parts.length - 1];
+  if (parts.length >= 2 && classifyWorkString(last) === 'employment') {
     return {
       company: parts.slice(0, -1).join(' · ').trim(),
-      workType: parts[parts.length - 1].trim(),
+      employmentType: last.trim(),
     };
   }
-  return { company: text.trim(), workType: '' };
+  return { company: text.trim(), employmentType: '' };
 }
 
 interface RawFields {
@@ -628,54 +403,62 @@ function collectFields(node: AnyNode, skipType?: string): RawFields {
 interface PositionData {
   role: string;
   period: string;
-  workType: string;
+  employmentType: string;
+  workplaceType: string;
   location: string;
+  description: string;
 }
 
 function classifySecondaryTextLine(text: string): {
   period?: string;
   location?: string;
-  workType?: string;
+  employmentType?: string;
+  workplaceType?: string;
 } {
-  // Сначала проверяем — это период?
   if (isPeriod(text)) return { period: text };
 
-  // Иначе пробуем разбить по · и проверить последний фрагмент на workType
   const parts = text.split(/\s*·\s*/);
-  const last = parts[parts.length - 1];
+  const result: ReturnType<typeof classifySecondaryTextLine> = {};
 
-  if (parts.length >= 2 && isWorkType(last)) {
-    return {
-      location: parts.slice(0, -1).join(' · ').trim(),
-      workType: last.trim(),
-    };
+  for (const part of parts) {
+    const kind = classifyWorkString(part.trim());
+    if (kind === 'employment') result.employmentType = part.trim();
+    else if (kind === 'workplace') result.workplaceType = part.trim();
+    else result.location = part.trim();
   }
 
-  // Весь текст — либо workType, либо location
-  if (isWorkType(text)) return { workType: text };
-  return { location: text };
+  return result;
 }
 
 function parseLi(li: AnyNode): PositionData {
   const { paragraphs, textLines } = collectFields(li);
   const role = paragraphs[0] ?? '';
   let period = '',
-    workType = '';
+    employmentType = '',
+    workplaceType = '';
   const locationParts: string[] = [];
 
   for (const tl of textLines) {
     if (tl.colorExpression === 176) {
-      workType = tl.text;
+      employmentType = tl.text;
       continue;
     }
-
     const classified = classifySecondaryTextLine(tl.text);
-
     if (classified.period && !period) period = classified.period;
-    if (classified.workType && !workType) workType = classified.workType;
+    if (classified.employmentType && !employmentType)
+      employmentType = classified.employmentType;
+    if (classified.workplaceType && !workplaceType)
+      workplaceType = classified.workplaceType;
     if (classified.location) locationParts.push(classified.location);
   }
-  return { role, period, workType, location: locationParts.join(', ') };
+  return {
+    role,
+    period,
+    employmentType,
+    workplaceType,
+    description: extractDescription(li),
+    location: locationParts.join(', '),
+  };
 }
 
 function parseGrouped(entryNode: AnyNode): Experience[] {
@@ -705,8 +488,10 @@ function parseGrouped(entryNode: AnyNode): Experience[] {
       company,
       role: pos.role,
       period: pos.period,
-      workType: pos.workType,
+      employmentType: pos.employmentType,
+      workplaceType: pos.workplaceType,
       location: pos.location || parentLocation,
+      description: pos.description,
     };
   });
 }
@@ -714,31 +499,37 @@ function parseGrouped(entryNode: AnyNode): Experience[] {
 function parseFlat(entryNode: AnyNode): Experience {
   const { paragraphs, textLines } = collectFields(entryNode);
   const role = paragraphs[0] ?? '';
-  const { company, workType: workTypeFromP } = parseCompanyLine(
+  // parseCompanyLine тоже нужно обновить чтобы возвращал employmentType
+  const { company, employmentType: etFromP } = parseCompanyLine(
     paragraphs[1] ?? '',
   );
   let period = '',
-    workType = workTypeFromP;
+    employmentType = etFromP,
+    workplaceType = '';
   const locationParts: string[] = [];
 
   for (const tl of textLines) {
-    if (tl.colorExpression === 176) {
-      workType = tl.text;
+    if (tl.colorExpression === 176 && !employmentType) {
+      employmentType = tl.text;
       continue;
     }
-
     const classified = classifySecondaryTextLine(tl.text);
-
     if (classified.period && !period) period = classified.period;
-    if (classified.workType && !workType) workType = classified.workType;
+    if (classified.employmentType && !employmentType)
+      employmentType = classified.employmentType;
+    if (classified.workplaceType && !workplaceType)
+      workplaceType = classified.workplaceType;
     if (classified.location) locationParts.push(classified.location);
   }
+
   return {
     company,
     role,
     period,
-    workType,
+    employmentType,
+    workplaceType,
     location: locationParts.join(', '),
+    description: extractDescription(entryNode),
   };
 }
 

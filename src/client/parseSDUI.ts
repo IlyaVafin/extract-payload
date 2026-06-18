@@ -1,5 +1,4 @@
-import fs from 'fs';
-export function parseSDUI(rawData: string) {
+export function parseSDUI(rawData: string): unknown {
   const lines = rawData.trim().split(/\n(?=[0-9a-f]+:)/i);
 
   const registry: Record<string, any> = {};
@@ -172,8 +171,3 @@ export function parseSDUI(rawData: string) {
 
   return resolve(registry['0']);
 }
-
-const content = fs.readFileSync('./exp.json', { encoding: 'utf-8' });
-
-const result = parseSDUI(content);
-fs.writeFileSync('./res.json', JSON.stringify(result, null, 2));
